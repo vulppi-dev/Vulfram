@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"name": "root",
+			"path": "."
+		},
+		{
+			"name": "core",
+			"path": "./packages/core"
+		},
+		{
+			"name": "engine",
+			"path": "./packages/engine"
+		},
+	]
+}
