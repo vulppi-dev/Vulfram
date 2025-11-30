@@ -1,0 +1,13 @@
+pub type Size = [u32; 2];
+pub type IVector2 = [i32; 2];
+pub type Vector2 = [f32; 2];
+pub type IVector3 = [i32; 3];
+pub type Vector3 = [f32; 3];
+pub type IVector4 = [i32; 4];
+pub type Vector4 = [f32; 4];
+pub type Color = [f32; 4];
+pub type Rect = [f32; 4];
+pub type Cube = [f32; 6];
+pub type Matrix3x3 = [f32; 9];
+pub type Matrix4x4 = [f32; 16];
+pub type Quaternion = [f32; 4];
