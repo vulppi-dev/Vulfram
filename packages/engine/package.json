@@ -30,7 +30,6 @@
   "types": "./src/index.ts",
   "scripts": {
     "dev": "bun src/dev.ts",
-    "build:core": "bun scripts/build.ts",
     "pub": "npm publish --access=public --tag=latest",
     "format": "prettier --write ."
   },
@@ -45,8 +44,6 @@
   "devDependencies": {
     "@types/bun": "^1.3.3",
     "@types/minimist": "^1.2.5",
-    "prettier": "^3.7.3",
-    "prettier-plugin-multiline-arrays": "^4.0.3",
     "typescript": "^5.9.3"
   },
   "engines": {
