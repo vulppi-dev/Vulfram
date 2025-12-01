@@ -23,6 +23,6 @@
       "cwd": "${workspaceFolder}",
       "stopOnEntry": false,
       "watchMode": false
-    },
+    }
   ]
 }

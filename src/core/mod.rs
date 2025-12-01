@@ -1,3 +1,4 @@
+use gilrs::{Event as GilrsEvent, EventType as GilrsEventType, Gilrs};
 use once_cell::sync::OnceCell;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -5,7 +6,7 @@ use std::sync::Arc;
 use std::thread::{self, ThreadId};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent as WinitWindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::platform::pump_events::EventLoopExtPumpEvents;
 use winit::window::{Window, WindowId};
 
@@ -14,9 +15,11 @@ pub mod units;
 
 use cmd::EngineEvent;
 use cmd::events::{
-    ElementState, KeyCode, KeyLocation, KeyboardEvent, ModifiersState, MouseButton, PointerEvent,
-    PointerType, ScrollDelta, SystemEvent, TouchPhase, WindowEvent,
+    ElementState, KeyboardEvent, ModifiersState, PointerEvent, PointerType, ScrollDelta,
+    SystemEvent, WindowEvent,
 };
+
+use crate::core::cmd::EngineEventEnvelope;
 
 #[derive(Debug)]
 #[repr(u32)]
@@ -28,7 +31,8 @@ pub enum EngineResult {
     WrongThread,
     BufferOverflow,
     // Reserved error codes for Winit 1000-1999
-    WinitError = 1000,
+    WinitEventLoopNotInitializedError = 1000,
+    WinitCreateWindowError,
     // Reserved error codes for WGPU 2000-2999
     WgpuInstanceError = 2000,
     // Reserved error codes for Command Processing 3000-3999
@@ -36,27 +40,40 @@ pub enum EngineResult {
 }
 
 pub struct WindowState {
-    pub id: WindowId,
     pub window: Arc<Window>,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
 }
 
 pub struct EngineState {
+    // Públicos - acessados em cmd/win.rs
     pub windows: HashMap<u32, WindowState>,
     pub window_id_map: HashMap<WindowId, u32>,
-    pub buffers: HashMap<u64, Vec<u8>>,
-    pub event_queue: cmd::EngineBatchEvents,
-    pub event_loop: Option<EventLoop<()>>,
-
+    pub window_id_counter: u32,
     pub wgpu: wgpu::Instance,
+    pub caps: Option<wgpu::SurfaceCapabilities>,
     pub device: Option<wgpu::Device>,
     pub queue: Option<wgpu::Queue>,
 
-    pub time: u64,
-    pub delta_time: u32,
+    // Públicos - acessados em funções públicas do módulo
+    pub buffers: HashMap<u64, Vec<u8>>,
+    pub event_queue: cmd::EngineBatchEvents,
 
+    // Privados - apenas uso interno
+    time: u64,
+    delta_time: u32,
     modifiers_state: ModifiersState,
+    gilrs: Option<Gilrs>,
+}
+
+struct EngineSingleton {
+    pub state: EngineState,
+    pub event_loop: Option<EventLoop<EngineCustomEvents>>,
+    pub proxy: Option<EventLoopProxy<EngineCustomEvents>>,
+}
+
+enum EngineCustomEvents {
+    ProcessCommands(cmd::EngineBatchCmds),
 }
 
 impl EngineState {
@@ -72,22 +89,33 @@ impl EngineState {
             memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
         };
         let wgpu_instance = wgpu::Instance::new(&wgpu_descriptor);
-        let event_loop = EventLoop::new().unwrap();
+
+        // Initialize gilrs for gamepad support
+        let gilrs = match Gilrs::new() {
+            Ok(gilrs) => Some(gilrs),
+            Err(e) => {
+                log::warn!("Failed to initialize gamepad support: {:?}", e);
+                None
+            }
+        };
 
         Self {
             windows: HashMap::new(),
             window_id_map: HashMap::new(),
             buffers: HashMap::new(),
             event_queue: Vec::new(),
-            event_loop: Some(event_loop),
+
+            window_id_counter: 0,
 
             wgpu: wgpu_instance,
+            caps: None,
             device: None,
             queue: None,
             time: 0,
             delta_time: 0,
 
             modifiers_state: ModifiersState::default(),
+            gilrs,
         }
     }
 
@@ -98,25 +126,33 @@ impl EngineState {
     }
 }
 
-impl ApplicationHandler for EngineState {
+impl ApplicationHandler<EngineCustomEvents> for EngineState {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue
-            .push(EngineEvent::System(SystemEvent::Resumed));
+        self.event_queue.push(EngineEventEnvelope {
+            id: 0,
+            event: EngineEvent::System(SystemEvent::OnResume),
+        });
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue
-            .push(EngineEvent::System(SystemEvent::Suspended));
+        self.event_queue.push(EngineEventEnvelope {
+            id: 0,
+            event: EngineEvent::System(SystemEvent::OnSuspend),
+        });
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue
-            .push(EngineEvent::System(SystemEvent::Exiting));
+        self.event_queue.push(EngineEventEnvelope {
+            id: 0,
+            event: EngineEvent::System(SystemEvent::OnExit),
+        });
     }
 
     fn memory_warning(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue
-            .push(EngineEvent::System(SystemEvent::MemoryWarning));
+        self.event_queue.push(EngineEventEnvelope {
+            id: 0,
+            event: EngineEvent::System(SystemEvent::OnMemoryWarning),
+        });
     }
 
     fn window_event(
@@ -132,63 +168,72 @@ impl ApplicationHandler for EngineState {
 
         match event {
             WinitWindowEvent::Resized(size) => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::Resized {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnResize {
                         window_id,
                         width: size.width,
                         height: size.height,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::Moved(position) => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::Moved {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnMove {
                         window_id,
                         position: [position.x, position.y],
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::CloseRequested => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::CloseRequested {
-                        window_id,
-                    }));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnCloseRequest { window_id }),
+                });
             }
 
             WinitWindowEvent::Destroyed => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::Destroyed { window_id }));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnDestroy { window_id }),
+                });
             }
 
             WinitWindowEvent::DroppedFile(path) => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::FileDropped {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnFileDrop {
                         window_id,
                         path: path.to_string_lossy().to_string(),
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::HoveredFile(path) => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::FileHovered {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnFileHover {
                         window_id,
                         path: path.to_string_lossy().to_string(),
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::HoveredFileCancelled => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::FileHoveredCancelled {
-                        window_id,
-                    }));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnFileHoverCancel { window_id }),
+                });
             }
 
             WinitWindowEvent::Focused(focused) => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::Focused {
-                        window_id,
-                        focused,
-                    }));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnFocus { window_id, focused }),
+                });
             }
 
             WinitWindowEvent::KeyboardInput {
@@ -200,16 +245,17 @@ impl ApplicationHandler for EngineState {
                     return;
                 }
 
-                let key_code = convert_key_code(&event.physical_key);
-                let location = convert_key_location(event.location);
+                let key_code = cmd::events::convert_key_code(&event.physical_key);
+                let location = cmd::events::convert_key_location(event.location);
                 let state = if event.state.is_pressed() {
                     ElementState::Pressed
                 } else {
                     ElementState::Released
                 };
 
-                self.event_queue
-                    .push(EngineEvent::Keyboard(KeyboardEvent::Input {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Keyboard(KeyboardEvent::OnInput {
                         window_id,
                         key_code,
                         state,
@@ -217,7 +263,8 @@ impl ApplicationHandler for EngineState {
                         repeat: event.repeat,
                         text: event.text.map(|s| s.to_string()),
                         modifiers: self.modifiers_state,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::ModifiersChanged(modifiers) => {
@@ -228,53 +275,66 @@ impl ApplicationHandler for EngineState {
                     meta: modifiers.state().super_key(),
                 };
 
-                self.event_queue
-                    .push(EngineEvent::Keyboard(KeyboardEvent::ModifiersChanged {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Keyboard(KeyboardEvent::OnModifiersChange {
                         window_id,
                         modifiers: self.modifiers_state,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::Ime(ime) => {
                 let ime_event = match ime {
-                    winit::event::Ime::Enabled => KeyboardEvent::ImeEnabled { window_id },
-                    winit::event::Ime::Preedit(text, cursor) => KeyboardEvent::ImePreedit {
+                    winit::event::Ime::Enabled => KeyboardEvent::OnImeEnable { window_id },
+                    winit::event::Ime::Preedit(text, cursor) => KeyboardEvent::OnImePreedit {
                         window_id,
                         text,
                         cursor_range: cursor,
                     },
-                    winit::event::Ime::Commit(text) => KeyboardEvent::ImeCommit { window_id, text },
-                    winit::event::Ime::Disabled => KeyboardEvent::ImeDisabled { window_id },
+                    winit::event::Ime::Commit(text) => {
+                        KeyboardEvent::OnImeCommit { window_id, text }
+                    }
+                    winit::event::Ime::Disabled => KeyboardEvent::OnImeDisable { window_id },
                 };
-                self.event_queue.push(EngineEvent::Keyboard(ime_event));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Keyboard(ime_event),
+                });
             }
 
             WinitWindowEvent::CursorMoved { position, .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::Moved {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnMove {
                         window_id,
                         pointer_type: PointerType::Mouse,
                         pointer_id: 0,
                         position: [position.x as f32, position.y as f32],
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::CursorEntered { .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::Entered {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnEnter {
                         window_id,
                         pointer_type: PointerType::Mouse,
                         pointer_id: 0,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::CursorLeft { .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::Left {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnLeave {
                         window_id,
                         pointer_type: PointerType::Mouse,
                         pointer_id: 0,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::MouseWheel { delta, phase, .. } => {
@@ -284,81 +344,93 @@ impl ApplicationHandler for EngineState {
                         ScrollDelta::Pixel([pos.x as f32, pos.y as f32])
                     }
                 };
-                let touch_phase = convert_touch_phase(phase);
+                let touch_phase = cmd::events::convert_touch_phase(phase);
 
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::Scroll {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnScroll {
                         window_id,
                         delta: scroll_delta,
                         phase: touch_phase,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::MouseInput { state, button, .. } => {
-                let btn = convert_mouse_button(button);
+                let btn = cmd::events::convert_mouse_button(button);
                 let elem_state = if state.is_pressed() {
                     ElementState::Pressed
                 } else {
                     ElementState::Released
                 };
 
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::Button {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnButton {
                         window_id,
                         pointer_type: PointerType::Mouse,
                         pointer_id: 0,
                         button: btn,
                         state: elem_state,
                         position: [0.0, 0.0], // Position is sent separately via CursorMoved
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::PinchGesture { delta, phase, .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::PinchGesture {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnPinchGesture {
                         window_id,
                         delta,
-                        phase: convert_touch_phase(phase),
-                    }));
+                        phase: cmd::events::convert_touch_phase(phase),
+                    }),
+                });
             }
 
             WinitWindowEvent::PanGesture { delta, phase, .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::PanGesture {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnPanGesture {
                         window_id,
                         delta: [delta.x, delta.y],
-                        phase: convert_touch_phase(phase),
-                    }));
+                        phase: cmd::events::convert_touch_phase(phase),
+                    }),
+                });
             }
 
             WinitWindowEvent::RotationGesture { delta, phase, .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::RotationGesture {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnRotationGesture {
                         window_id,
                         delta,
-                        phase: convert_touch_phase(phase),
-                    }));
+                        phase: cmd::events::convert_touch_phase(phase),
+                    }),
+                });
             }
 
             WinitWindowEvent::DoubleTapGesture { .. } => {
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::DoubleTapGesture {
-                        window_id,
-                    }));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnDoubleTapGesture { window_id }),
+                });
             }
 
             WinitWindowEvent::Touch(touch) => {
-                let phase = convert_touch_phase(touch.phase);
+                let phase = cmd::events::convert_touch_phase(touch.phase);
                 let pressure = touch.force.map(|f| f.normalized() as f32);
 
-                self.event_queue
-                    .push(EngineEvent::Pointer(PointerEvent::Touch {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Pointer(PointerEvent::OnTouch {
                         window_id,
                         pointer_id: touch.id,
                         phase,
                         position: [touch.location.x as f32, touch.location.y as f32],
                         pressure,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::ScaleFactorChanged {
@@ -375,37 +447,43 @@ impl ApplicationHandler for EngineState {
                     })
                     .unwrap_or((0, 0));
 
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::ScaleFactorChanged {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnScaleFactorChange {
                         window_id,
                         scale_factor,
                         new_width,
                         new_height,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::ThemeChanged(theme) => {
                 let dark_mode = matches!(theme, winit::window::Theme::Dark);
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::ThemeChanged {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnThemeChange {
                         window_id,
                         dark_mode,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::Occluded(occluded) => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::Occluded {
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnOcclude {
                         window_id,
                         occluded,
-                    }));
+                    }),
+                });
             }
 
             WinitWindowEvent::RedrawRequested => {
-                self.event_queue
-                    .push(EngineEvent::Window(WindowEvent::RedrawRequested {
-                        window_id,
-                    }));
+                self.event_queue.push(EngineEventEnvelope {
+                    id: 0,
+                    event: EngineEvent::Window(WindowEvent::OnRedrawRequest { window_id }),
+                });
             }
 
             // Events we don't need to handle
@@ -414,223 +492,20 @@ impl ApplicationHandler for EngineState {
             WinitWindowEvent::TouchpadPressure { .. } => {}
         }
     }
-}
 
-// MARK: - Conversion Functions
-
-fn convert_touch_phase(phase: winit::event::TouchPhase) -> TouchPhase {
-    match phase {
-        winit::event::TouchPhase::Started => TouchPhase::Started,
-        winit::event::TouchPhase::Moved => TouchPhase::Moved,
-        winit::event::TouchPhase::Ended => TouchPhase::Ended,
-        winit::event::TouchPhase::Cancelled => TouchPhase::Cancelled,
-    }
-}
-
-fn convert_mouse_button(button: winit::event::MouseButton) -> MouseButton {
-    match button {
-        winit::event::MouseButton::Left => MouseButton::Left,
-        winit::event::MouseButton::Right => MouseButton::Right,
-        winit::event::MouseButton::Middle => MouseButton::Middle,
-        winit::event::MouseButton::Back => MouseButton::Back,
-        winit::event::MouseButton::Forward => MouseButton::Forward,
-        winit::event::MouseButton::Other(id) => MouseButton::Other(id as u8),
-    }
-}
-
-fn convert_key_location(location: winit::keyboard::KeyLocation) -> KeyLocation {
-    match location {
-        winit::keyboard::KeyLocation::Standard => KeyLocation::Standard,
-        winit::keyboard::KeyLocation::Left => KeyLocation::Left,
-        winit::keyboard::KeyLocation::Right => KeyLocation::Right,
-        winit::keyboard::KeyLocation::Numpad => KeyLocation::Numpad,
-    }
-}
-
-fn convert_key_code(physical_key: &winit::keyboard::PhysicalKey) -> KeyCode {
-    use winit::keyboard::KeyCode as WKeyCode;
-    use winit::keyboard::PhysicalKey;
-
-    match physical_key {
-        PhysicalKey::Code(code) => match code {
-            // Writing System Keys
-            WKeyCode::Backquote => KeyCode::Backquote,
-            WKeyCode::Backslash => KeyCode::Backslash,
-            WKeyCode::BracketLeft => KeyCode::BracketLeft,
-            WKeyCode::BracketRight => KeyCode::BracketRight,
-            WKeyCode::Comma => KeyCode::Comma,
-            WKeyCode::Digit0 => KeyCode::Digit0,
-            WKeyCode::Digit1 => KeyCode::Digit1,
-            WKeyCode::Digit2 => KeyCode::Digit2,
-            WKeyCode::Digit3 => KeyCode::Digit3,
-            WKeyCode::Digit4 => KeyCode::Digit4,
-            WKeyCode::Digit5 => KeyCode::Digit5,
-            WKeyCode::Digit6 => KeyCode::Digit6,
-            WKeyCode::Digit7 => KeyCode::Digit7,
-            WKeyCode::Digit8 => KeyCode::Digit8,
-            WKeyCode::Digit9 => KeyCode::Digit9,
-            WKeyCode::Equal => KeyCode::Equal,
-            WKeyCode::IntlBackslash => KeyCode::IntlBackslash,
-            WKeyCode::IntlRo => KeyCode::IntlRo,
-            WKeyCode::IntlYen => KeyCode::IntlYen,
-            WKeyCode::KeyA => KeyCode::KeyA,
-            WKeyCode::KeyB => KeyCode::KeyB,
-            WKeyCode::KeyC => KeyCode::KeyC,
-            WKeyCode::KeyD => KeyCode::KeyD,
-            WKeyCode::KeyE => KeyCode::KeyE,
-            WKeyCode::KeyF => KeyCode::KeyF,
-            WKeyCode::KeyG => KeyCode::KeyG,
-            WKeyCode::KeyH => KeyCode::KeyH,
-            WKeyCode::KeyI => KeyCode::KeyI,
-            WKeyCode::KeyJ => KeyCode::KeyJ,
-            WKeyCode::KeyK => KeyCode::KeyK,
-            WKeyCode::KeyL => KeyCode::KeyL,
-            WKeyCode::KeyM => KeyCode::KeyM,
-            WKeyCode::KeyN => KeyCode::KeyN,
-            WKeyCode::KeyO => KeyCode::KeyO,
-            WKeyCode::KeyP => KeyCode::KeyP,
-            WKeyCode::KeyQ => KeyCode::KeyQ,
-            WKeyCode::KeyR => KeyCode::KeyR,
-            WKeyCode::KeyS => KeyCode::KeyS,
-            WKeyCode::KeyT => KeyCode::KeyT,
-            WKeyCode::KeyU => KeyCode::KeyU,
-            WKeyCode::KeyV => KeyCode::KeyV,
-            WKeyCode::KeyW => KeyCode::KeyW,
-            WKeyCode::KeyX => KeyCode::KeyX,
-            WKeyCode::KeyY => KeyCode::KeyY,
-            WKeyCode::KeyZ => KeyCode::KeyZ,
-            WKeyCode::Minus => KeyCode::Minus,
-            WKeyCode::Period => KeyCode::Period,
-            WKeyCode::Quote => KeyCode::Quote,
-            WKeyCode::Semicolon => KeyCode::Semicolon,
-            WKeyCode::Slash => KeyCode::Slash,
-
-            // Functional Keys
-            WKeyCode::AltLeft => KeyCode::AltLeft,
-            WKeyCode::AltRight => KeyCode::AltRight,
-            WKeyCode::Backspace => KeyCode::Backspace,
-            WKeyCode::CapsLock => KeyCode::CapsLock,
-            WKeyCode::ContextMenu => KeyCode::ContextMenu,
-            WKeyCode::ControlLeft => KeyCode::ControlLeft,
-            WKeyCode::ControlRight => KeyCode::ControlRight,
-            WKeyCode::Enter => KeyCode::Enter,
-            WKeyCode::SuperLeft => KeyCode::SuperLeft,
-            WKeyCode::SuperRight => KeyCode::SuperRight,
-            WKeyCode::ShiftLeft => KeyCode::ShiftLeft,
-            WKeyCode::ShiftRight => KeyCode::ShiftRight,
-            WKeyCode::Space => KeyCode::Space,
-            WKeyCode::Tab => KeyCode::Tab,
-
-            // Control Keys
-            WKeyCode::Delete => KeyCode::Delete,
-            WKeyCode::End => KeyCode::End,
-            WKeyCode::Help => KeyCode::Help,
-            WKeyCode::Home => KeyCode::Home,
-            WKeyCode::Insert => KeyCode::Insert,
-            WKeyCode::PageDown => KeyCode::PageDown,
-            WKeyCode::PageUp => KeyCode::PageUp,
-
-            // Arrow Keys
-            WKeyCode::ArrowDown => KeyCode::ArrowDown,
-            WKeyCode::ArrowLeft => KeyCode::ArrowLeft,
-            WKeyCode::ArrowRight => KeyCode::ArrowRight,
-            WKeyCode::ArrowUp => KeyCode::ArrowUp,
-
-            // Numpad Keys
-            WKeyCode::NumLock => KeyCode::NumLock,
-            WKeyCode::Numpad0 => KeyCode::Numpad0,
-            WKeyCode::Numpad1 => KeyCode::Numpad1,
-            WKeyCode::Numpad2 => KeyCode::Numpad2,
-            WKeyCode::Numpad3 => KeyCode::Numpad3,
-            WKeyCode::Numpad4 => KeyCode::Numpad4,
-            WKeyCode::Numpad5 => KeyCode::Numpad5,
-            WKeyCode::Numpad6 => KeyCode::Numpad6,
-            WKeyCode::Numpad7 => KeyCode::Numpad7,
-            WKeyCode::Numpad8 => KeyCode::Numpad8,
-            WKeyCode::Numpad9 => KeyCode::Numpad9,
-            WKeyCode::NumpadAdd => KeyCode::NumpadAdd,
-            WKeyCode::NumpadBackspace => KeyCode::NumpadBackspace,
-            WKeyCode::NumpadClear => KeyCode::NumpadClear,
-            WKeyCode::NumpadClearEntry => KeyCode::NumpadClearEntry,
-            WKeyCode::NumpadComma => KeyCode::NumpadComma,
-            WKeyCode::NumpadDecimal => KeyCode::NumpadDecimal,
-            WKeyCode::NumpadDivide => KeyCode::NumpadDivide,
-            WKeyCode::NumpadEnter => KeyCode::NumpadEnter,
-            WKeyCode::NumpadEqual => KeyCode::NumpadEqual,
-            WKeyCode::NumpadHash => KeyCode::NumpadHash,
-            WKeyCode::NumpadMemoryAdd => KeyCode::NumpadMemoryAdd,
-            WKeyCode::NumpadMemoryClear => KeyCode::NumpadMemoryClear,
-            WKeyCode::NumpadMemoryRecall => KeyCode::NumpadMemoryRecall,
-            WKeyCode::NumpadMemoryStore => KeyCode::NumpadMemoryStore,
-            WKeyCode::NumpadMemorySubtract => KeyCode::NumpadMemorySubtract,
-            WKeyCode::NumpadMultiply => KeyCode::NumpadMultiply,
-            WKeyCode::NumpadParenLeft => KeyCode::NumpadParenLeft,
-            WKeyCode::NumpadParenRight => KeyCode::NumpadParenRight,
-            WKeyCode::NumpadStar => KeyCode::NumpadStar,
-            WKeyCode::NumpadSubtract => KeyCode::NumpadSubtract,
-
-            // Function Keys
-            WKeyCode::Escape => KeyCode::Escape,
-            WKeyCode::F1 => KeyCode::F1,
-            WKeyCode::F2 => KeyCode::F2,
-            WKeyCode::F3 => KeyCode::F3,
-            WKeyCode::F4 => KeyCode::F4,
-            WKeyCode::F5 => KeyCode::F5,
-            WKeyCode::F6 => KeyCode::F6,
-            WKeyCode::F7 => KeyCode::F7,
-            WKeyCode::F8 => KeyCode::F8,
-            WKeyCode::F9 => KeyCode::F9,
-            WKeyCode::F10 => KeyCode::F10,
-            WKeyCode::F11 => KeyCode::F11,
-            WKeyCode::F12 => KeyCode::F12,
-            WKeyCode::F13 => KeyCode::F13,
-            WKeyCode::F14 => KeyCode::F14,
-            WKeyCode::F15 => KeyCode::F15,
-            WKeyCode::F16 => KeyCode::F16,
-            WKeyCode::F17 => KeyCode::F17,
-            WKeyCode::F18 => KeyCode::F18,
-            WKeyCode::F19 => KeyCode::F19,
-            WKeyCode::F20 => KeyCode::F20,
-            WKeyCode::F21 => KeyCode::F21,
-            WKeyCode::F22 => KeyCode::F22,
-            WKeyCode::F23 => KeyCode::F23,
-            WKeyCode::F24 => KeyCode::F24,
-
-            // Lock Keys
-            WKeyCode::ScrollLock => KeyCode::ScrollLock,
-
-            // Media Keys
-            WKeyCode::AudioVolumeDown => KeyCode::AudioVolumeDown,
-            WKeyCode::AudioVolumeMute => KeyCode::AudioVolumeMute,
-            WKeyCode::AudioVolumeUp => KeyCode::AudioVolumeUp,
-            WKeyCode::MediaPlayPause => KeyCode::MediaPlayPause,
-            WKeyCode::MediaStop => KeyCode::MediaStop,
-            WKeyCode::MediaTrackNext => KeyCode::MediaTrackNext,
-            WKeyCode::MediaTrackPrevious => KeyCode::MediaTrackPrevious,
-
-            // Browser Keys
-            WKeyCode::BrowserBack => KeyCode::BrowserBack,
-            WKeyCode::BrowserFavorites => KeyCode::BrowserFavorites,
-            WKeyCode::BrowserForward => KeyCode::BrowserForward,
-            WKeyCode::BrowserHome => KeyCode::BrowserHome,
-            WKeyCode::BrowserRefresh => KeyCode::BrowserRefresh,
-            WKeyCode::BrowserSearch => KeyCode::BrowserSearch,
-            WKeyCode::BrowserStop => KeyCode::BrowserStop,
-
-            // System Keys
-            WKeyCode::PrintScreen => KeyCode::PrintScreen,
-            WKeyCode::Pause => KeyCode::Pause,
-
-            _ => KeyCode::Unidentified,
-        },
-        PhysicalKey::Unidentified(_) => KeyCode::Unidentified,
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EngineCustomEvents) {
+        match event {
+            EngineCustomEvents::ProcessCommands(batch) => {
+                let _ = cmd::engine_process_batch(self, event_loop, batch);
+            }
+        }
     }
 }
 
 // MARK: - Engine Management
 
 thread_local! {
-    static ENGINE_INSTANCE: RefCell<Option<EngineState>> = RefCell::new(None);
+    static ENGINE_INSTANCE: RefCell<Option<EngineSingleton>> = RefCell::new(None);
 }
 static MAIN_THREAD_ID: OnceCell<ThreadId> = OnceCell::new();
 
@@ -649,7 +524,16 @@ pub fn engine_init() -> EngineResult {
         if opt.is_some() {
             return EngineResult::AlreadyInitialized;
         } else {
-            *opt = Some(EngineState::new());
+            let event_loop = EventLoop::<EngineCustomEvents>::with_user_event()
+                .build()
+                .unwrap();
+            let proxy = event_loop.create_proxy();
+
+            *opt = Some(EngineSingleton {
+                state: EngineState::new(),
+                event_loop: Some(event_loop),
+                proxy: Some(proxy),
+            });
             return EngineResult::Success;
         }
     })
@@ -688,6 +572,24 @@ where
     ENGINE_INSTANCE.with(|cell| {
         let mut opt = cell.borrow_mut();
         let engine_state = opt.as_mut().ok_or(EngineResult::NotInitialized)?;
+        Ok(f(&mut engine_state.state))
+    })
+}
+
+fn with_engine_singleton<F, R>(f: F) -> Result<R, EngineResult>
+where
+    F: FnOnce(&mut EngineSingleton) -> R,
+{
+    let current_id = thread::current().id();
+    let main_id = MAIN_THREAD_ID.get().ok_or(EngineResult::NotInitialized)?;
+
+    if &current_id != main_id {
+        return Err(EngineResult::WrongThread);
+    }
+
+    ENGINE_INSTANCE.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        let engine_state = opt.as_mut().ok_or(EngineResult::NotInitialized)?;
         Ok(f(engine_state))
     })
 }
@@ -702,7 +604,11 @@ pub fn engine_send_queue(ptr: *const u8, length: usize) -> EngineResult {
         Ok(batch) => batch,
     };
 
-    match with_engine(|engine_state| cmd::engine_process_batch(engine_state, batch)) {
+    match with_engine_singleton(|engine| {
+        if let Some(proxy) = &engine.proxy {
+            let _ = proxy.send_event(EngineCustomEvents::ProcessCommands(batch));
+        }
+    }) {
         Err(e) => return e,
         Ok(_) => EngineResult::Success,
     }
@@ -798,19 +704,112 @@ pub fn engine_clear_buffer(bfr_id: u64) -> EngineResult {
 }
 
 pub fn engine_tick(time: u64, delta_time: u32) -> EngineResult {
-    match with_engine(|engine_state| {
-        engine_state.time = time;
-        engine_state.delta_time = delta_time;
+    match with_engine_singleton(|engine| {
+        engine.state.time = time;
+        engine.state.delta_time = delta_time;
 
-        if let Some(mut event_loop) = engine_state.event_loop.take() {
-            event_loop.set_control_flow(ControlFlow::Poll);
-            event_loop.pump_app_events(None, engine_state);
-            engine_state.event_loop = Some(event_loop);
+        // Process gamepad/joystick events
+        let mut gilrs_events = Vec::new();
+        if let Some(gilrs) = &mut engine.state.gilrs {
+            while let Some(event) = gilrs.next_event() {
+                gilrs_events.push(event);
+            }
         }
 
-        engine_state.request_redraw();
+        for event in gilrs_events {
+            process_gilrs_event(&mut engine.state, event);
+        }
+
+        if let Some(mut event_loop) = engine.event_loop.take() {
+            event_loop.set_control_flow(ControlFlow::Poll);
+            event_loop.pump_app_events(None, &mut engine.state);
+            engine.event_loop = Some(event_loop);
+        }
+
+        engine.state.request_redraw();
     }) {
         Err(e) => e,
         Ok(_) => EngineResult::Success,
+    }
+}
+
+fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
+    let gamepad_id: u32 = usize::from(event.id) as u32;
+
+    match event.event {
+        GilrsEventType::Connected => {
+            let name = if let Some(gilrs) = &engine_state.gilrs {
+                gilrs.gamepad(event.id).name().to_string()
+            } else {
+                "Unknown".to_string()
+            };
+
+            engine_state.event_queue.push(EngineEventEnvelope {
+                id: 0,
+                event: EngineEvent::Gamepad(cmd::events::GamepadEvent::OnConnect {
+                    gamepad_id,
+                    name,
+                }),
+            });
+        }
+        GilrsEventType::Disconnected => {
+            engine_state.event_queue.push(EngineEventEnvelope {
+                id: 0,
+                event: EngineEvent::Gamepad(cmd::events::GamepadEvent::OnDisconnect { gamepad_id }),
+            });
+        }
+        GilrsEventType::ButtonPressed(button, _code) => {
+            let button_mapped = cmd::events::convert_gilrs_button(button);
+            engine_state.event_queue.push(EngineEventEnvelope {
+                id: 0,
+                event: EngineEvent::Gamepad(cmd::events::GamepadEvent::OnButton {
+                    gamepad_id,
+                    button: button_mapped,
+                    state: cmd::events::ElementState::Pressed,
+                    value: 1.0,
+                }),
+            });
+        }
+        GilrsEventType::ButtonReleased(button, _code) => {
+            let button_mapped = cmd::events::convert_gilrs_button(button);
+            engine_state.event_queue.push(EngineEventEnvelope {
+                id: 0,
+                event: EngineEvent::Gamepad(cmd::events::GamepadEvent::OnButton {
+                    gamepad_id,
+                    button: button_mapped,
+                    state: cmd::events::ElementState::Released,
+                    value: 0.0,
+                }),
+            });
+        }
+        GilrsEventType::ButtonChanged(button, value, _code) => {
+            let button_mapped = cmd::events::convert_gilrs_button(button);
+            let state = if value > 0.5 {
+                cmd::events::ElementState::Pressed
+            } else {
+                cmd::events::ElementState::Released
+            };
+            engine_state.event_queue.push(EngineEventEnvelope {
+                id: 0,
+                event: EngineEvent::Gamepad(cmd::events::GamepadEvent::OnButton {
+                    gamepad_id,
+                    button: button_mapped,
+                    state,
+                    value,
+                }),
+            });
+        }
+        GilrsEventType::AxisChanged(axis, value, _code) => {
+            let axis_mapped = cmd::events::convert_gilrs_axis(axis);
+            engine_state.event_queue.push(EngineEventEnvelope {
+                id: 0,
+                event: EngineEvent::Gamepad(cmd::events::GamepadEvent::OnAxis {
+                    gamepad_id,
+                    axis: axis_mapped,
+                    value,
+                }),
+            });
+        }
+        _ => {}
     }
 }

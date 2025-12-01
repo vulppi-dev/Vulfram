@@ -23,37 +23,37 @@ export type IVector2 = [number, number];
 // MARK: Window Events
 
 export interface WindowCreatedEvent {
-  event: 'created';
+  event: 'on-create';
   data: { windowId: number };
 }
 
 export interface WindowResizedEvent {
-  event: 'resized';
+  event: 'on-resize';
   data: { windowId: number; width: number; height: number };
 }
 
 export interface WindowMovedEvent {
-  event: 'moved';
+  event: 'on-move';
   data: { windowId: number; position: IVector2 };
 }
 
 export interface WindowCloseRequestedEvent {
-  event: 'close-requested';
+  event: 'on-close-request';
   data: { windowId: number };
 }
 
 export interface WindowDestroyedEvent {
-  event: 'destroyed';
+  event: 'on-destroy';
   data: { windowId: number };
 }
 
 export interface WindowFocusedEvent {
-  event: 'focused';
+  event: 'on-focus';
   data: { windowId: number; focused: boolean };
 }
 
 export interface WindowScaleFactorChangedEvent {
-  event: 'scale-factor-changed';
+  event: 'on-scale-factor-change';
   data: {
     windowId: number;
     scaleFactor: number;
@@ -63,32 +63,32 @@ export interface WindowScaleFactorChangedEvent {
 }
 
 export interface WindowOccludedEvent {
-  event: 'occluded';
+  event: 'on-occlude';
   data: { windowId: number; occluded: boolean };
 }
 
 export interface WindowRedrawRequestedEvent {
-  event: 'redraw-requested';
+  event: 'on-redraw-request';
   data: { windowId: number };
 }
 
 export interface WindowFileDroppedEvent {
-  event: 'file-dropped';
+  event: 'on-file-drop';
   data: { windowId: number; path: string };
 }
 
 export interface WindowFileHoveredEvent {
-  event: 'file-hovered';
+  event: 'on-file-hover';
   data: { windowId: number; path: string };
 }
 
 export interface WindowFileHoveredCancelledEvent {
-  event: 'file-hovered-cancelled';
+  event: 'on-file-hover-cancel';
   data: { windowId: number };
 }
 
 export interface WindowThemeChangedEvent {
-  event: 'theme-changed';
+  event: 'on-theme-change';
   data: { windowId: number; darkMode: boolean };
 }
 
@@ -127,7 +127,7 @@ export type ScrollDelta =
   | { type: 'pixel'; value: Vector2 };
 
 export interface PointerMovedEvent {
-  event: 'moved';
+  event: 'on-move';
   data: {
     windowId: number;
     pointerType: PointerType;
@@ -137,7 +137,7 @@ export interface PointerMovedEvent {
 }
 
 export interface PointerEnteredEvent {
-  event: 'entered';
+  event: 'on-enter';
   data: {
     windowId: number;
     pointerType: PointerType;
@@ -146,7 +146,7 @@ export interface PointerEnteredEvent {
 }
 
 export interface PointerLeftEvent {
-  event: 'left';
+  event: 'on-leave';
   data: {
     windowId: number;
     pointerType: PointerType;
@@ -155,7 +155,7 @@ export interface PointerLeftEvent {
 }
 
 export interface PointerButtonEvent {
-  event: 'button';
+  event: 'on-button';
   data: {
     windowId: number;
     pointerType: PointerType;
@@ -167,7 +167,7 @@ export interface PointerButtonEvent {
 }
 
 export interface PointerScrollEvent {
-  event: 'scroll';
+  event: 'on-scroll';
   data: {
     windowId: number;
     delta: ScrollDelta;
@@ -176,7 +176,7 @@ export interface PointerScrollEvent {
 }
 
 export interface PointerTouchEvent {
-  event: 'touch';
+  event: 'on-touch';
   data: {
     windowId: number;
     pointerId: number;
@@ -187,7 +187,7 @@ export interface PointerTouchEvent {
 }
 
 export interface PointerPinchGestureEvent {
-  event: 'pinch-gesture';
+  event: 'on-pinch-gesture';
   data: {
     windowId: number;
     delta: number;
@@ -196,7 +196,7 @@ export interface PointerPinchGestureEvent {
 }
 
 export interface PointerPanGestureEvent {
-  event: 'pan-gesture';
+  event: 'on-pan-gesture';
   data: {
     windowId: number;
     delta: Vector2;
@@ -205,7 +205,7 @@ export interface PointerPanGestureEvent {
 }
 
 export interface PointerRotationGestureEvent {
-  event: 'rotation-gesture';
+  event: 'on-rotation-gesture';
   data: {
     windowId: number;
     delta: number;
@@ -214,7 +214,7 @@ export interface PointerRotationGestureEvent {
 }
 
 export interface PointerDoubleTapGestureEvent {
-  event: 'double-tap-gesture';
+  event: 'on-double-tap-gesture';
   data: { windowId: number };
 }
 
@@ -399,7 +399,7 @@ export type KeyCode =
   | 'unidentified';
 
 export interface KeyboardInputEvent {
-  event: 'input';
+  event: 'on-input';
   data: {
     windowId: number;
     keyCode: KeyCode;
@@ -412,7 +412,7 @@ export interface KeyboardInputEvent {
 }
 
 export interface KeyboardModifiersChangedEvent {
-  event: 'modifiers-changed';
+  event: 'on-modifiers-change';
   data: {
     windowId: number;
     modifiers: ModifiersState;
@@ -420,12 +420,12 @@ export interface KeyboardModifiersChangedEvent {
 }
 
 export interface KeyboardImeEnabledEvent {
-  event: 'ime-enabled';
+  event: 'on-ime-enable';
   data: { windowId: number };
 }
 
 export interface KeyboardImePreeditEvent {
-  event: 'ime-preedit';
+  event: 'on-ime-preedit';
   data: {
     windowId: number;
     text: string;
@@ -434,7 +434,7 @@ export interface KeyboardImePreeditEvent {
 }
 
 export interface KeyboardImeCommitEvent {
-  event: 'ime-commit';
+  event: 'on-ime-commit';
   data: {
     windowId: number;
     text: string;
@@ -442,7 +442,7 @@ export interface KeyboardImeCommitEvent {
 }
 
 export interface KeyboardImeDisabledEvent {
-  event: 'ime-disabled';
+  event: 'on-ime-disable';
   data: { windowId: number };
 }
 
@@ -494,7 +494,7 @@ export type GamepadAxis =
   | { other: number };
 
 export interface GamepadConnectedEvent {
-  event: 'connected';
+  event: 'on-connect';
   data: {
     gamepadId: number;
     name: string;
@@ -502,12 +502,12 @@ export interface GamepadConnectedEvent {
 }
 
 export interface GamepadDisconnectedEvent {
-  event: 'disconnected';
+  event: 'on-disconnect';
   data: { gamepadId: number };
 }
 
 export interface GamepadButtonEvent {
-  event: 'button';
+  event: 'on-button';
   data: {
     gamepadId: number;
     button: GamepadButton;
@@ -517,7 +517,7 @@ export interface GamepadButtonEvent {
 }
 
 export interface GamepadAxisEvent {
-  event: 'axis';
+  event: 'on-axis';
   data: {
     gamepadId: number;
     axis: GamepadAxis;
@@ -546,7 +546,7 @@ export type JoystickHatPosition =
   | 'left-up';
 
 export interface JoystickConnectedEvent {
-  event: 'connected';
+  event: 'on-connect';
   data: {
     joystickId: number;
     name: string;
@@ -557,12 +557,12 @@ export interface JoystickConnectedEvent {
 }
 
 export interface JoystickDisconnectedEvent {
-  event: 'disconnected';
+  event: 'on-disconnect';
   data: { joystickId: number };
 }
 
 export interface JoystickButtonEvent {
-  event: 'button';
+  event: 'on-button';
   data: {
     joystickId: number;
     buttonIndex: number;
@@ -571,7 +571,7 @@ export interface JoystickButtonEvent {
 }
 
 export interface JoystickAxisEvent {
-  event: 'axis';
+  event: 'on-axis';
   data: {
     joystickId: number;
     axisIndex: number;
@@ -580,7 +580,7 @@ export interface JoystickAxisEvent {
 }
 
 export interface JoystickHatEvent {
-  event: 'hat';
+  event: 'on-hat';
   data: {
     joystickId: number;
     hatIndex: number;
@@ -598,19 +598,19 @@ export type JoystickEvent =
 // MARK: System Events
 
 export interface SystemResumedEvent {
-  event: 'resumed';
+  event: 'on-resume';
 }
 
 export interface SystemSuspendedEvent {
-  event: 'suspended';
+  event: 'on-suspend';
 }
 
 export interface SystemMemoryWarningEvent {
-  event: 'memory-warning';
+  event: 'on-memory-warning';
 }
 
 export interface SystemExitingEvent {
-  event: 'exiting';
+  event: 'on-exit';
 }
 
 export type SystemEvent =

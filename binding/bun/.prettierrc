@@ -6,6 +6,5 @@
   "printWidth": 80,
   "semi": true,
   "singleQuote": true,
-  "bracketSpacing": true,
-  "plugins": ["prettier-plugin-multiline-arrays"]
+  "bracketSpacing": true
 }
