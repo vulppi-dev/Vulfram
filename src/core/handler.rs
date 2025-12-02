@@ -3,6 +3,8 @@ use winit::event::WindowEvent as WinitWindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::core::render::render_frames;
+
 use super::cmd::events::*;
 use super::cmd::{self, EngineEvent, EngineEventEnvelope};
 use super::singleton::EngineCustomEvents;
@@ -377,6 +379,8 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     id: 0,
                     event: EngineEvent::Window(WindowEvent::OnRedrawRequest { window_id }),
                 });
+
+                render_frames(winit_window_id, self);
             }
 
             // Events we don't need to handle

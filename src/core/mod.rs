@@ -3,6 +3,7 @@ mod buffers;
 mod handler;
 mod lifecycle;
 mod queue;
+mod render;
 mod result;
 mod singleton;
 mod state;

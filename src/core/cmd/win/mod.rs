@@ -1,4 +1,4 @@
-// Window management module - organized into submodules
+use serde::{Deserialize, Serialize};
 
 mod attention;
 mod create;
@@ -6,14 +6,11 @@ mod cursor;
 mod decorations;
 mod properties;
 
-// Re-export all public types and functions
 pub use attention::*;
 pub use create::*;
 pub use cursor::*;
 pub use decorations::*;
 pub use properties::*;
-
-use serde::{Deserialize, Serialize};
 
 // Shared types
 #[repr(u32)]
