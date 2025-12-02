@@ -4,24 +4,33 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-env_logger = "0.11.8"
-log = "0.4.28"
-notifica = "3.0.2"
-once_cell = "1.21.3"
-pollster = "0.4.0"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_cbor = "0.11.2"
-serde_repr = "0.1.20"
-wgpu = "27.0.1"
-winit = "0.30.12"
-gilrs = "0.11.0"
+env_logger = "0.11"
+log = "0.4"
+notifica = "3.0"
+once_cell = "1.21"
+pollster = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+serde_repr = "0.1"
+wgpu = "27.0"
+winit = "0.30"
+gilrs = "0.11"
 
 # Image decoding
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "avif"] }
+napi = { version = "3.6", optional = true }
+napi-derive = { version = "3.4", optional = true }
+
+# N-API dependencies (optional)
 
 [lib]
 crate-type = ["cdylib"]
 path = "src/lib.rs"
+
+[features]
+default = ["ffi"]
+ffi = []  # C ABI / FFI export (default)
+napi = ["dep:napi", "dep:napi-derive"]  # N-API export
 
 [profile.dev]
 opt-level = 0

@@ -99,3 +99,37 @@ export function vulframReceiveQueue(): [EngineBatchEvents, VulframResult] {
   const events = decode(buffer) as EngineBatchEvents;
   return [events, result];
 }
+
+export function vulframTick(time: bigint, deltaTime: number): VulframResult {
+  return VULFRAM_CORE.engine_tick(time, deltaTime);
+}
+
+export function vulframUploadBuffer(
+  id: bigint,
+  buffer: Uint8Array,
+): VulframResult {
+  const bufferPtr = ptr(buffer);
+  const length = buffer.byteLength;
+  return VULFRAM_CORE.engine_upload_buffer(id, bufferPtr, length);
+}
+
+export function vulframDownloadBuffer(id: bigint): [Uint8Array, VulframResult] {
+  const lengthHolder = new BigUint64Array(1);
+  const lengthHolderPtr = ptr(lengthHolder);
+
+  let result = VULFRAM_CORE.engine_download_buffer(id, null, lengthHolderPtr);
+  if (result !== 0 || lengthHolder[0] === 0n) {
+    return [new Uint8Array(0), result];
+  }
+  const buffer = new Uint8Array(Number(lengthHolder[0]));
+  const bufferPtr = ptr(buffer);
+  result = VULFRAM_CORE.engine_download_buffer(id, bufferPtr, lengthHolderPtr);
+  if (result !== 0) {
+    return [new Uint8Array(0), result];
+  }
+  return [buffer, result];
+}
+
+export function vulframClearBuffer(id: bigint): VulframResult {
+  return VULFRAM_CORE.engine_clear_buffer(id);
+}
