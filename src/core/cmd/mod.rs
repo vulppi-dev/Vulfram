@@ -22,6 +22,15 @@ pub enum EngineCmd {
     CmdWindowSetState(win::CmdWindowSetStateArgs),
     CmdWindowGetState(win::CmdWindowGetStateArgs),
     CmdWindowSetIcon(win::CmdWindowSetIconArgs),
+    CmdWindowSetDecorations(win::CmdWindowSetDecorationsArgs),
+    CmdWindowHasDecorations(win::CmdWindowHasDecorationsArgs),
+    CmdWindowSetResizable(win::CmdWindowSetResizableArgs),
+    CmdWindowIsResizable(win::CmdWindowIsResizableArgs),
+    CmdWindowRequestAttention(win::CmdWindowRequestAttentionArgs),
+    CmdWindowFocus(win::CmdWindowFocusArgs),
+    CmdWindowSetCursorVisible(win::CmdWindowSetCursorVisibleArgs),
+    CmdWindowSetCursorGrab(win::CmdWindowSetCursorGrabArgs),
+    CmdWindowSetCursorIcon(win::CmdWindowSetCursorIconArgs),
 }
 
 /// Engine event types sent from native to JavaScript
@@ -46,6 +55,15 @@ pub enum EngineEvent {
     WindowSetState(win::CmdResultWindowSetState),
     WindowGetState(win::CmdResultWindowGetState),
     WindowSetIcon(win::CmdResultWindowSetIcon),
+    WindowSetDecorations(win::CmdResultWindowSetDecorations),
+    WindowHasDecorations(win::CmdResultWindowHasDecorations),
+    WindowSetResizable(win::CmdResultWindowSetResizable),
+    WindowIsResizable(win::CmdResultWindowIsResizable),
+    WindowRequestAttention(win::CmdResultWindowRequestAttention),
+    WindowFocus(win::CmdResultWindowFocus),
+    WindowSetCursorVisible(win::CmdResultWindowSetCursorVisible),
+    WindowSetCursorGrab(win::CmdResultWindowSetCursorGrab),
+    WindowSetCursorIcon(win::CmdResultWindowSetCursorIcon),
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -155,6 +173,69 @@ pub fn engine_process_batch(
                 engine.event_queue.push(EngineEventEnvelope {
                     id: pack.id,
                     event: EngineEvent::WindowSetIcon(result),
+                });
+            }
+            EngineCmd::CmdWindowSetDecorations(args) => {
+                let result = win::engine_cmd_window_set_decorations(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowSetDecorations(result),
+                });
+            }
+            EngineCmd::CmdWindowHasDecorations(args) => {
+                let result = win::engine_cmd_window_has_decorations(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowHasDecorations(result),
+                });
+            }
+            EngineCmd::CmdWindowSetResizable(args) => {
+                let result = win::engine_cmd_window_set_resizable(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowSetResizable(result),
+                });
+            }
+            EngineCmd::CmdWindowIsResizable(args) => {
+                let result = win::engine_cmd_window_is_resizable(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowIsResizable(result),
+                });
+            }
+            EngineCmd::CmdWindowRequestAttention(args) => {
+                let result = win::engine_cmd_window_request_attention(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowRequestAttention(result),
+                });
+            }
+            EngineCmd::CmdWindowFocus(args) => {
+                let result = win::engine_cmd_window_focus(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowFocus(result),
+                });
+            }
+            EngineCmd::CmdWindowSetCursorVisible(args) => {
+                let result = win::engine_cmd_window_set_cursor_visible(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowSetCursorVisible(result),
+                });
+            }
+            EngineCmd::CmdWindowSetCursorGrab(args) => {
+                let result = win::engine_cmd_window_set_cursor_grab(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowSetCursorGrab(result),
+                });
+            }
+            EngineCmd::CmdWindowSetCursorIcon(args) => {
+                let result = win::engine_cmd_window_set_cursor_icon(engine, &args);
+                engine.event_queue.push(EngineEventEnvelope {
+                    id: pack.id,
+                    event: EngineEvent::WindowSetCursorIcon(result),
                 });
             }
         }

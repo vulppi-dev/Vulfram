@@ -1,6 +1,6 @@
 use super::cmd::EngineBatchCmds;
 use super::result::EngineResult;
-use super::singleton::{with_engine, with_engine_singleton, EngineCustomEvents};
+use super::singleton::{EngineCustomEvents, with_engine, with_engine_singleton};
 
 /// Send a batch of commands to the engine
 pub fn engine_send_queue(ptr: *const u8, length: usize) -> EngineResult {

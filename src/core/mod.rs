@@ -26,4 +26,3 @@ pub(crate) use result::EngineResult;
 pub(crate) use singleton::{with_engine, with_engine_singleton};
 #[allow(unused_imports)]
 pub(crate) use state::{EngineState, WindowState};
-
