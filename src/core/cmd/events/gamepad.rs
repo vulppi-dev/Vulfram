@@ -57,12 +57,15 @@ pub enum GamepadAxis {
 #[serde(tag = "event", content = "data", rename_all = "kebab-case")]
 pub enum GamepadEvent {
     /// Gamepad was connected
+    #[serde(rename_all = "camelCase")]
     OnConnect { gamepad_id: u32, name: String },
 
     /// Gamepad was disconnected
+    #[serde(rename_all = "camelCase")]
     OnDisconnect { gamepad_id: u32 },
 
     /// Gamepad button pressed/released
+    #[serde(rename_all = "camelCase")]
     OnButton {
         gamepad_id: u32,
         button: GamepadButton,
@@ -71,6 +74,7 @@ pub enum GamepadEvent {
     },
 
     /// Gamepad axis moved
+    #[serde(rename_all = "camelCase")]
     OnAxis {
         gamepad_id: u32,
         axis: GamepadAxis,

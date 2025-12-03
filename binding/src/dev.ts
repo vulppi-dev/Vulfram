@@ -179,7 +179,6 @@ const loopInterval = setInterval(() => {
     }
 
     process.exit(0);
-    return;
   }
 
   // Calculate delta time
