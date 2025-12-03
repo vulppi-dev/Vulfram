@@ -18,18 +18,21 @@ gilrs = "0.11"
 
 # Image decoding
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "avif"] }
+
+# N-API dependencies (optional)
 napi = { version = "3.6", optional = true }
 napi-derive = { version = "3.4", optional = true }
 
-# N-API dependencies (optional)
+[build-dependencies]
+napi-build = "2.3.1"
 
 [lib]
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [features]
-default = ["ffi"]
-ffi = []  # C ABI / FFI export (default)
+default = ["napi"]  # Default to N-API export
+ffi = []  # C ABI / FFI export
 napi = ["dep:napi", "dep:napi-derive"]  # N-API export
 
 [profile.dev]
@@ -39,5 +42,6 @@ opt-level = 0
 opt-level = 3
 lto = true
 codegen-units = 1
+
 
 

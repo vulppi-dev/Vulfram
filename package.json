@@ -4,24 +4,15 @@
   "main": "index.node",
   "types": "index.d.ts",
   "napi": {
-    "name": "vulfram-core",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "x86_64-pc-windows-msvc",
-        "x86_64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin"
-      ]
-    }
+    "name": "vulfram-core"
   },
   "scripts": {
-    "build:ffi": "cargo build --release --features ffi",
-    "build:napi": "cargo build --release --features napi --no-default-features",
+    "build:ffi": "cargo build --release --features ffi --no-default-features",
+    "build:napi": "napi build --release -d binding/napi",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.0"
+    "@napi-rs/cli": "^3.5.0"
   }
 }

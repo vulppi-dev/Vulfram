@@ -2912,6 +2912,7 @@ dependencies = [
  "image",
  "log",
  "napi",
+ "napi-build",
  "napi-derive",
  "notifica",
  "once_cell",
