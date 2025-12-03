@@ -4,6 +4,7 @@ mod core;
 // FFI (C ABI) Exports - for Bun/Node FFI via dlopen
 // ============================================================================
 #[cfg(feature = "ffi")]
+#[allow(dead_code)]
 mod ffi_exports {
     use super::core;
 
@@ -60,6 +61,7 @@ mod ffi_exports {
 // N-API Exports - for Node.js native modules
 // ============================================================================
 #[cfg(feature = "napi")]
+#[allow(dead_code)]
 mod napi_exports {
     use super::core;
     use napi::bindgen_prelude::*;

@@ -191,12 +191,22 @@ pub fn engine_cmd_window_create(
     // Configure the surface with the device
     surface.configure(engine.device.as_ref().unwrap(), &config);
 
+    // Get initial window positions and sizes
+    let inner_position = window.inner_position().unwrap_or_default();
+    let outer_position = window.outer_position().unwrap_or_default();
+    let inner_size = window.inner_size();
+    let outer_size = window.outer_size();
+
     engine.windows.insert(
         win_id,
         WindowState {
             window,
             surface,
             config,
+            inner_position: [inner_position.x, inner_position.y],
+            outer_position: [outer_position.x, outer_position.y],
+            inner_size: [inner_size.width, inner_size.height],
+            outer_size: [outer_size.width, outer_size.height],
         },
     );
 

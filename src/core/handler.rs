@@ -60,6 +60,11 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                         window_state
                             .surface
                             .configure(self.device.as_ref().unwrap(), &window_state.config);
+
+                        // Update size state
+                        window_state.inner_size = [size.width, size.height];
+                        let outer_size = window_state.window.outer_size();
+                        window_state.outer_size = [outer_size.width, outer_size.height];
                     }
                 }
 
@@ -74,6 +79,16 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
             }
 
             WinitWindowEvent::Moved(position) => {
+                // Update window state
+                if let Some(window_state) = self.windows.get_mut(&window_id) {
+                    if let Ok(inner_pos) = window_state.window.inner_position() {
+                        window_state.inner_position = [inner_pos.x, inner_pos.y];
+                    }
+                    if let Ok(outer_pos) = window_state.window.outer_position() {
+                        window_state.outer_position = [outer_pos.x, outer_pos.y];
+                    }
+                }
+
                 self.event_queue.push(EngineEventEnvelope {
                     id: 0,
                     event: EngineEvent::Window(WindowEvent::OnMove {
@@ -199,13 +214,17 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
             }
 
             WinitWindowEvent::CursorMoved { position, .. } => {
+                // Save cursor position for this window
+                let cursor_pos = [position.x as f32, position.y as f32];
+                self.cursor_positions.insert(window_id, cursor_pos);
+
                 self.event_queue.push(EngineEventEnvelope {
                     id: 0,
                     event: EngineEvent::Pointer(PointerEvent::OnMove {
                         window_id,
                         pointer_type: PointerType::Mouse,
                         pointer_id: 0,
-                        position: [position.x as f32, position.y as f32],
+                        position: cursor_pos,
                     }),
                 });
             }
@@ -259,6 +278,13 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     ElementState::Released
                 };
 
+                // Get the last known cursor position for this window
+                let position = self
+                    .cursor_positions
+                    .get(&window_id)
+                    .copied()
+                    .unwrap_or([0.0, 0.0]);
+
                 self.event_queue.push(EngineEventEnvelope {
                     id: 0,
                     event: EngineEvent::Pointer(PointerEvent::OnButton {
@@ -267,7 +293,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                         pointer_id: 0,
                         button: btn,
                         state: elem_state,
-                        position: [0.0, 0.0], // Position is sent separately via CursorMoved
+                        position,
                     }),
                 });
             }

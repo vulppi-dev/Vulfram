@@ -5,12 +5,19 @@ use winit::window::{Window, WindowId};
 use crate::core::buffers::Buffer;
 use crate::core::cmd::EngineBatchEvents;
 use crate::core::cmd::events::ModifiersState;
+use crate::core::units::{IVector2, Size, Vector2};
 
 /// Represents a window with its associated WGPU resources
 pub struct WindowState {
     pub window: Arc<Window>,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
+
+    // Window state tracking
+    pub inner_position: IVector2,
+    pub outer_position: IVector2,
+    pub inner_size: Size,
+    pub outer_size: Size,
 }
 
 /// Main engine state holding all runtime data
@@ -38,6 +45,7 @@ pub struct EngineState {
 
     // Input state
     pub(crate) modifiers_state: ModifiersState,
+    pub(crate) cursor_positions: HashMap<u32, Vector2>,
     pub(crate) gilrs: Option<gilrs::Gilrs>,
 }
 
@@ -80,6 +88,7 @@ impl EngineState {
             delta_time: 0,
 
             modifiers_state: ModifiersState::default(),
+            cursor_positions: HashMap::new(),
             gilrs,
         }
     }

@@ -5,7 +5,7 @@
   "types": "index.d.ts",
   "scripts": {
     "build:ffi": "cargo build --release --features ffi --no-default-features",
-    "build:napi": "napi build --release -o binding/src/napi --no-dts",
+    "build:napi": "napi build --release -o binding/src/napi",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm"
   },
