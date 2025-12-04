@@ -150,6 +150,9 @@ pub fn engine_cmd_window_set_size(
             window_state
                 .surface
                 .configure(engine.device.as_ref().unwrap(), &window_state.config);
+            
+            // Mark window as dirty to trigger redraw
+            window_state.is_dirty = true;
 
             CmdResultWindowSetSize {
                 success: true,

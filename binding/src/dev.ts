@@ -1,12 +1,18 @@
 import type { EngineCmdEnvelope } from './cmds';
 import {
   vulframDispose,
+  vulframGetBenchmarks,
   vulframInit,
   vulframReceiveQueue,
+  vulframResetBenchmarks,
+  vulframSetBenchmark,
   VulframResult,
   vulframSendQueue,
   vulframTick,
 } from './index';
+
+// Enable benchmark tracking
+vulframSetBenchmark(true);
 
 // Initialize engine
 console.log('Initializing Vulfram Engine...');
@@ -168,6 +174,24 @@ function processEvents() {
 const loopInterval = setInterval(() => {
   if (!running) {
     clearInterval(loopInterval);
+
+    // Print benchmark results
+    console.log('\n📊 Benchmark Results:');
+    console.log('='.repeat(80));
+    const benchmarks = vulframGetBenchmarks();
+
+    for (const bench of benchmarks) {
+      console.log(`\n${bench.name}:`);
+      console.log(`  Calls:       ${bench.calls.toLocaleString()}`);
+      console.log(`  Total:       ${bench.totalMs.toFixed(3)} ms`);
+      console.log(
+        `  Avg:         ${bench.avgUs.toFixed(3)} µs (${bench.avgNs.toFixed(0)} ns)`,
+      );
+      console.log(`  Min:         ${bench.minUs.toFixed(3)} µs`);
+      console.log(`  Max:         ${bench.maxUs.toFixed(3)} µs`);
+      console.log(`  Last:        ${bench.lastUs.toFixed(3)} µs`);
+    }
+    console.log('\n' + '='.repeat(80));
 
     // Cleanup
     console.log('\nDisposing engine...');

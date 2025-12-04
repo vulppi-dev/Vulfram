@@ -65,6 +65,9 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                         window_state.inner_size = [size.width, size.height];
                         let outer_size = window_state.window.outer_size();
                         window_state.outer_size = [outer_size.width, outer_size.height];
+
+                        // Mark window as dirty to trigger redraw
+                        window_state.is_dirty = true;
                     }
                 }
 

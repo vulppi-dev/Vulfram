@@ -8,6 +8,114 @@ export * from './dev';
 export * from './enums';
 export * from './events';
 
+// MARK: Benchmark types
+
+export interface BenchmarkMetrics {
+  /** Function name */
+  name: string;
+  /** Total number of calls */
+  calls: number;
+  /** Total time in milliseconds */
+  totalMs: number;
+  /** Average time in microseconds */
+  avgUs: number;
+  /** Average time in nanoseconds */
+  avgNs: number;
+  /** Minimum time in microseconds */
+  minUs: number;
+  /** Maximum time in microseconds */
+  maxUs: number;
+  /** Last call time in microseconds */
+  lastUs: number;
+}
+
+interface BenchmarkData {
+  calls: number;
+  totalMs: number;
+  minUs: number;
+  maxUs: number;
+  lastUs: number;
+}
+
+const benchmarks = new Map<string, BenchmarkData>();
+let benchmarkEnabled = false;
+
+/**
+ * Enables or disables benchmark tracking for NAPI calls.
+ * When enabled, tracks execution time for each function call.
+ */
+export function vulframSetBenchmark(enabled: boolean): void {
+  benchmarkEnabled = enabled;
+  if (!enabled) {
+    benchmarks.clear();
+  }
+}
+
+/**
+ * Returns current benchmark metrics for all tracked functions.
+ */
+export function vulframGetBenchmarks(): BenchmarkMetrics[] {
+  const results: BenchmarkMetrics[] = [];
+
+  for (const [name, data] of benchmarks.entries()) {
+    const avgMs = data.totalMs / data.calls;
+    const avgUs = avgMs * 1000;
+    const avgNs = avgUs * 1000;
+
+    results.push({
+      name,
+      calls: data.calls,
+      totalMs: data.totalMs,
+      avgUs,
+      avgNs,
+      minUs: data.minUs,
+      maxUs: data.maxUs,
+      lastUs: data.lastUs,
+    });
+  }
+
+  return results.sort((a, b) => b.totalMs - a.totalMs);
+}
+
+/**
+ * Resets all benchmark statistics.
+ */
+export function vulframResetBenchmarks(): void {
+  benchmarks.clear();
+}
+
+function trackBenchmark<T>(name: string, fn: () => T): T {
+  if (!benchmarkEnabled) {
+    return fn();
+  }
+
+  const start = performance.now();
+  const result = fn();
+  const end = performance.now();
+
+  const durationMs = end - start;
+  const durationUs = durationMs * 1000;
+
+  const existing = benchmarks.get(name);
+  if (existing) {
+    existing.calls++;
+    existing.totalMs += durationMs;
+    existing.minUs = Math.min(existing.minUs, durationUs);
+    existing.maxUs = Math.max(existing.maxUs, durationUs);
+    existing.lastUs = durationUs;
+  } else {
+    benchmarks.set(name, {
+      calls: 1,
+      totalMs: durationMs,
+      minUs: durationUs,
+      maxUs: durationUs,
+      lastUs: durationUs,
+    });
+  }
+
+  return result;
+}
+
 /**
  * Initializes the Vulfram game engine.
  * Must be called before any other engine operations.
@@ -21,7 +129,7 @@ export * from './events';
  * ```
  */
 export function vulframInit(): VulframResult {
-  return VULFRAM_CORE.engineInit();
+  return trackBenchmark('vulframInit', () => VULFRAM_CORE.engineInit());
 }
 
 /**
@@ -35,7 +143,7 @@ export function vulframInit(): VulframResult {
  * ```
  */
 export function vulframDispose(): VulframResult {
-  return VULFRAM_CORE.engineDispose();
+  return trackBenchmark('vulframDispose', () => VULFRAM_CORE.engineDispose());
 }
 
 /**
@@ -61,8 +169,10 @@ export function vulframDispose(): VulframResult {
  * ```
  */
 export function vulframSendQueue(batch: EngineBatchCmds): VulframResult {
-  const buffer = pack(batch);
-  return VULFRAM_CORE.engineSendQueue(Buffer.from(buffer));
+  return trackBenchmark('vulframSendQueue', () => {
+    const buffer = pack(batch);
+    return VULFRAM_CORE.engineSendQueue(Buffer.from(buffer));
+  });
 }
 
 /**
@@ -82,9 +192,11 @@ export function vulframSendQueue(batch: EngineBatchCmds): VulframResult {
  * ```
  */
 export function vulframReceiveQueue(): [EngineBatchEvents, VulframResult] {
-  const { buffer, result } = VULFRAM_CORE.engineReceiveQueue();
-  const events = unpack(buffer) as EngineBatchEvents;
-  return [events, result];
+  return trackBenchmark('vulframReceiveQueue', () => {
+    const { buffer, result } = VULFRAM_CORE.engineReceiveQueue();
+    const events = unpack(buffer) as EngineBatchEvents;
+    return [events, result];
+  });
 }
 
 /**
@@ -106,7 +218,9 @@ export function vulframReceiveQueue(): [EngineBatchEvents, VulframResult] {
  * ```
  */
 export function vulframTick(time: number, deltaTime: number): VulframResult {
-  return VULFRAM_CORE.engineTick(time, deltaTime);
+  return trackBenchmark('vulframTick', () =>
+    VULFRAM_CORE.engineTick(time, deltaTime),
+  );
 }
 
 /**
@@ -128,7 +242,9 @@ export function vulframUploadBuffer(
   id: number,
   buffer: Uint8Array,
 ): VulframResult {
-  return VULFRAM_CORE.engineUploadBuffer(id, Buffer.from(buffer));
+  return trackBenchmark('vulframUploadBuffer', () =>
+    VULFRAM_CORE.engineUploadBuffer(id, Buffer.from(buffer)),
+  );
 }
 
 /**
@@ -146,8 +262,10 @@ export function vulframUploadBuffer(
  * ```
  */
 export function vulframDownloadBuffer(id: number): [Uint8Array, VulframResult] {
-  const { buffer, result } = VULFRAM_CORE.engineDownloadBuffer(id);
-  return [buffer, result];
+  return trackBenchmark('vulframDownloadBuffer', () => {
+    const { buffer, result } = VULFRAM_CORE.engineDownloadBuffer(id);
+    return [buffer, result];
+  });
 }
 
 /**
@@ -162,5 +280,7 @@ export function vulframDownloadBuffer(id: number): [Uint8Array, VulframResult] {
  * ```
  */
 export function vulframClearBuffer(id: number): VulframResult {
-  return VULFRAM_CORE.engineClearBuffer(id);
+  return trackBenchmark('vulframClearBuffer', () =>
+    VULFRAM_CORE.engineClearBuffer(id),
+  );
 }

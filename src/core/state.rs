@@ -18,6 +18,7 @@ pub struct WindowState {
     pub outer_position: IVector2,
     pub inner_size: Size,
     pub outer_size: Size,
+    pub is_dirty: bool,
 }
 
 /// Main engine state holding all runtime data
@@ -93,9 +94,28 @@ impl EngineState {
         }
     }
 
-    pub fn request_redraw(&self) {
-        for window_state in self.windows.values() {
-            window_state.window.request_redraw();
+    pub fn request_redraw(&mut self) {
+        for window_state in self.windows.values_mut() {
+            if window_state.is_dirty {
+                window_state.window.request_redraw();
+                window_state.is_dirty = false;
+            }
+        }
+    }
+
+    /// Mark a specific window as dirty to trigger redraw on next tick
+    #[allow(dead_code)]
+    pub fn mark_window_dirty(&mut self, window_id: u32) {
+        if let Some(window_state) = self.windows.get_mut(&window_id) {
+            window_state.is_dirty = true;
+        }
+    }
+
+    /// Mark all windows as dirty to trigger redraw on next tick
+    #[allow(dead_code)]
+    pub fn mark_all_windows_dirty(&mut self) {
+        for window_state in self.windows.values_mut() {
+            window_state.is_dirty = true;
         }
     }
 }

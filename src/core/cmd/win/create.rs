@@ -207,6 +207,7 @@ pub fn engine_cmd_window_create(
             outer_position: [outer_position.x, outer_position.y],
             inner_size: [inner_size.width, inner_size.height],
             outer_size: [outer_size.width, outer_size.height],
+            is_dirty: false,
         },
     );
 
