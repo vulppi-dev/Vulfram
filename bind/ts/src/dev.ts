@@ -2,6 +2,7 @@ import type { EngineCmdEnvelope } from './cmds';
 import {
   vulframDispose,
   vulframGetBenchmarks,
+  vulframGetProfiling,
   vulframInit,
   vulframReceiveQueue,
   vulframResetBenchmarks,
@@ -192,6 +193,52 @@ const loopInterval = setInterval(() => {
       console.log(`  Last:        ${bench.lastUs.toFixed(3)} µs`);
     }
     console.log('\n' + '='.repeat(80));
+
+    // Print detailed profiling from last tick
+    const [profiling, profilingResult] = vulframGetProfiling();
+    if (profilingResult === VulframResult.Success) {
+      console.log('\n🔬 Detailed Tick Profiling (Last Tick):');
+      console.log('='.repeat(80));
+      console.log(
+        `Gamepad Processing:     ${profiling.gamepadProcessingUs.toFixed(3)} µs`,
+      );
+      console.log(
+        `Event Loop Pump:        ${profiling.eventLoopPumpUs.toFixed(3)} µs`,
+      );
+      console.log(
+        `Request Redraw:         ${profiling.requestRedrawUs.toFixed(3)} µs`,
+      );
+      console.log(
+        `Serialization:          ${profiling.serializationUs.toFixed(3)} µs`,
+      );
+      console.log(`Events Dispatched:      ${profiling.totalEventsDispatched}`);
+      console.log(`Events Cached (skip):   ${profiling.totalEventsCached}`);
+
+      const totalUs =
+        profiling.gamepadProcessingUs +
+        profiling.eventLoopPumpUs +
+        profiling.requestRedrawUs +
+        profiling.serializationUs;
+      console.log(`\nTotal Measured:         ${totalUs.toFixed(3)} µs`);
+
+      // Breakdown percentages
+      if (totalUs > 0) {
+        console.log('\nBreakdown:');
+        console.log(
+          `  Gamepad:       ${((profiling.gamepadProcessingUs / totalUs) * 100).toFixed(1)}%`,
+        );
+        console.log(
+          `  Event Loop:    ${((profiling.eventLoopPumpUs / totalUs) * 100).toFixed(1)}%`,
+        );
+        console.log(
+          `  Redraw:        ${((profiling.requestRedrawUs / totalUs) * 100).toFixed(1)}%`,
+        );
+        console.log(
+          `  Serialization: ${((profiling.serializationUs / totalUs) * 100).toFixed(1)}%`,
+        );
+      }
+      console.log('='.repeat(80));
+    }
 
     // Cleanup
     console.log('\nDisposing engine...');

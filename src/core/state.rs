@@ -55,6 +55,20 @@ pub struct EngineState {
     pub(crate) window_cache: WindowCacheManager,
     pub(crate) input_cache: InputCacheManager,
     pub(crate) gamepad_cache: GamepadCacheManager,
+
+    // Profiling data
+    pub(crate) profiling: TickProfiling,
+}
+
+/// Detailed profiling data for tick operations
+#[derive(Debug, Clone, Default)]
+pub struct TickProfiling {
+    pub gamepad_processing_ns: u64,
+    pub event_loop_pump_ns: u64,
+    pub request_redraw_ns: u64,
+    pub serialization_ns: u64,
+    pub total_events_dispatched: usize,
+    pub total_events_cached: usize,
 }
 
 impl EngineState {
@@ -103,16 +117,20 @@ impl EngineState {
             window_cache: WindowCacheManager::new(),
             input_cache: InputCacheManager::new(),
             gamepad_cache: GamepadCacheManager::new(),
+
+            profiling: TickProfiling::default(),
         }
     }
 
     pub fn request_redraw(&mut self) {
+        let start = std::time::Instant::now();
         for window_state in self.windows.values_mut() {
-            if window_state.is_dirty {
-                window_state.window.request_redraw();
-                window_state.is_dirty = false;
-            }
+            // if window_state.is_dirty {
+            window_state.window.request_redraw();
+            window_state.is_dirty = false;
+            // }
         }
+        self.profiling.request_redraw_ns = start.elapsed().as_nanos() as u64;
     }
 
     /// Mark a specific window as dirty to trigger redraw on next tick

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::cmd::EngineBatchCmds;
 use super::result::VulframResult;
 use super::singleton::{EngineCustomEvents, with_engine, with_engine_singleton};
@@ -31,14 +33,17 @@ pub fn engine_receive_queue(out_ptr: *mut *const u8, out_length: *mut usize) -> 
                 *out_length = 0;
                 *out_ptr = std::ptr::null();
             }
+            engine.profiling.serialization_ns = 0;
             return VulframResult::Success;
         }
 
-        // Serialize once and store in buffer
+        // MARK: Serialization
+        let serialization_start = Instant::now();
         engine.serialized_events_buffer = match rmp_serde::to_vec_named(&engine.event_queue) {
             Ok(data) => data,
             Err(_) => return VulframResult::UnknownError,
         };
+        engine.profiling.serialization_ns = serialization_start.elapsed().as_nanos() as u64;
 
         unsafe {
             *out_ptr = engine.serialized_events_buffer.as_ptr();

@@ -164,4 +164,29 @@ mod napi_exports {
     pub fn engine_tick(time: i64, delta_time: u32) -> u32 {
         core::engine_tick(time as u64, delta_time) as u32
     }
+
+    #[napi]
+    pub fn engine_get_profiling() -> Result<BufferResult> {
+        let mut length: usize = 0;
+        let mut ptr: *const u8 = std::ptr::null();
+        let length_ptr = &mut length as *mut usize;
+        let ptr_ptr = &mut ptr as *mut *const u8;
+
+        let result = core::engine_get_profiling(ptr_ptr, length_ptr) as u32;
+
+        if result != 0 || length == 0 {
+            return Ok(BufferResult {
+                buffer: Buffer::from(vec![]),
+                result,
+            });
+        }
+
+        // Copy data from internal buffer
+        let data = unsafe { std::slice::from_raw_parts(ptr, length) };
+
+        Ok(BufferResult {
+            buffer: Buffer::from(data.to_vec()),
+            result,
+        })
+    }
 }

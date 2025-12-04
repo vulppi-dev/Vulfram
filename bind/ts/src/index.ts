@@ -8,6 +8,23 @@ export * from './dev';
 export * from './enums';
 export * from './events';
 
+// MARK: Profiling types
+
+export interface ProfilingData {
+  /** Time spent processing gamepad events in microseconds */
+  gamepadProcessingUs: number;
+  /** Time spent in event loop pump in microseconds */
+  eventLoopPumpUs: number;
+  /** Time spent requesting redraws in microseconds */
+  requestRedrawUs: number;
+  /** Time spent serializing events in microseconds */
+  serializationUs: number;
+  /** Total number of events dispatched */
+  totalEventsDispatched: number;
+  /** Total number of events cached (not dispatched due to no change) */
+  totalEventsCached: number;
+}
+
 // MARK: Benchmark types
 
 export interface BenchmarkMetrics {
@@ -289,4 +306,61 @@ export function vulframClearBuffer(id: number): VulframResult {
   return trackBenchmark('vulframClearBuffer', () =>
     VULFRAM_CORE.engineClearBuffer(id),
   );
+}
+
+/**
+ * Gets detailed profiling data from the last engine tick.
+ * Provides breakdown of time spent in different tick phases.
+ *
+ * @example
+ * ```typescript
+ * const [profiling, result] = vulframGetProfiling();
+ * if (result === VulframResult.Success) {
+ *   console.log('Gamepad:', profiling.gamepadProcessingUs, 'µs');
+ *   console.log('Event Loop:', profiling.eventLoopPumpUs, 'µs');
+ *   console.log('Serialization:', profiling.serializationUs, 'µs');
+ *   console.log('Events Dispatched:', profiling.totalEventsDispatched);
+ *   console.log('Events Cached:', profiling.totalEventsCached);
+ * }
+ * ```
+ */
+export function vulframGetProfiling(): [ProfilingData, VulframResult] {
+  return trackBenchmark('vulframGetProfiling', () => {
+    const { buffer, result } = VULFRAM_CORE.engineGetProfiling();
+
+    if (buffer.length === 0) {
+      return [
+        {
+          gamepadProcessingUs: 0,
+          eventLoopPumpUs: 0,
+          requestRedrawUs: 0,
+          serializationUs: 0,
+          totalEventsDispatched: 0,
+          totalEventsCached: 0,
+        },
+        result,
+      ];
+    }
+
+    const data = unpack(buffer) as {
+      gamepad_processing_us: number;
+      event_loop_pump_us: number;
+      request_redraw_us: number;
+      serialization_us: number;
+      total_events_dispatched: number;
+      total_events_cached: number;
+    };
+
+    return [
+      {
+        gamepadProcessingUs: data.gamepad_processing_us,
+        eventLoopPumpUs: data.event_loop_pump_us,
+        requestRedrawUs: data.request_redraw_us,
+        serializationUs: data.serialization_us,
+        totalEventsDispatched: data.total_events_dispatched,
+        totalEventsCached: data.total_events_cached,
+      },
+      result,
+    ];
+  });
 }

@@ -1,4 +1,5 @@
 use gilrs::{Event as GilrsEvent, EventType as GilrsEventType};
+use std::time::Instant;
 use winit::event_loop::ControlFlow;
 use winit::platform::pump_events::EventLoopExtPumpEvents;
 
@@ -14,7 +15,15 @@ pub fn engine_tick(time: u64, delta_time: u32) -> VulframResult {
         engine.state.time = time;
         engine.state.delta_time = delta_time;
 
-        // Process gamepad events
+        // Reset profiling counters
+        engine.state.profiling.gamepad_processing_ns = 0;
+        engine.state.profiling.event_loop_pump_ns = 0;
+        engine.state.profiling.total_events_cached = 0;
+
+        let events_before = engine.state.event_queue.len();
+
+        // MARK: Gamepad Processing
+        let gamepad_start = Instant::now();
         let mut gilrs_events = Vec::new();
         if let Some(gilrs) = &mut engine.state.gilrs {
             while let Some(event) = gilrs.next_event() {
@@ -25,13 +34,21 @@ pub fn engine_tick(time: u64, delta_time: u32) -> VulframResult {
         for event in gilrs_events {
             process_gilrs_event(&mut engine.state, event);
         }
+        engine.state.profiling.gamepad_processing_ns = gamepad_start.elapsed().as_nanos() as u64;
 
-        if let Some(mut event_loop) = engine.event_loop.take() {
+        // MARK: Event Loop Pump
+        if let Some(event_loop) = &mut engine.event_loop {
             event_loop.set_control_flow(ControlFlow::Poll);
+
+            let pump_start = Instant::now();
             event_loop.pump_app_events(None, &mut engine.state);
-            engine.event_loop = Some(event_loop);
+            engine.state.profiling.event_loop_pump_ns = pump_start.elapsed().as_nanos() as u64;
         }
 
+        let events_after = engine.state.event_queue.len();
+        engine.state.profiling.total_events_dispatched = events_after - events_before;
+
+        // MARK: Request Redraw
         engine.state.request_redraw();
     }) {
         Err(e) => e,
@@ -150,7 +167,7 @@ fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
                 if !cache.axis_changed(axis_mapped, value) {
                     return;
                 }
-                
+
                 // Get the adjusted value with dead zone applied
                 let adjusted_value = cache.get_axis_value(axis_mapped);
                 cache.update_axis(axis_mapped, value);

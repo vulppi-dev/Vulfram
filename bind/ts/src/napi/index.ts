@@ -39,3 +39,7 @@ export function engineTick(time: number, deltaTime: number): number {
 export function engineUploadBuffer(id: number, data: Buffer): number {
   return VULFRAM_CORE.engineUploadBuffer(id, data);
 }
+
+export function engineGetProfiling(): BufferResult {
+  return VULFRAM_CORE.engineGetProfiling();
+}

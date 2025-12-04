@@ -6,8 +6,8 @@
   "scripts": {
     "build:ffi": "cargo build --release --features ffi --no-default-features",
     "build:napi": "napi build --release -o bind/ts/src/napi",
-    "artifacts": "napi artifacts",
-    "prepublishOnly": "napi prepublish -t npm"
+    "debug:ffi": "cargo build --features ffi --no-default-features",
+    "debug:napi": "napi build -o bind/ts/src/napi"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.5.0",
