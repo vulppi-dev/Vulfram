@@ -2,8 +2,8 @@ use gilrs::{Event as GilrsEvent, EventType as GilrsEventType};
 use std::time::Instant;
 use winit::platform::pump_events::EventLoopExtPumpEvents;
 
+use super::cmd::EngineEvent;
 use super::cmd::events::{ElementState, GamepadEvent};
-use super::cmd::{EngineEvent, EngineEventEnvelope};
 use super::result::VulframResult;
 use super::singleton::with_engine_singleton;
 use super::state::EngineState;
@@ -90,19 +90,22 @@ fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
                 .gamepad_cache
                 .add_gamepad(gamepad_id, name.clone());
 
-            engine_state.event_queue.push(EngineEventEnvelope {
-                id: 0,
-                event: EngineEvent::Gamepad(GamepadEvent::OnConnect { gamepad_id, name }),
-            });
+            engine_state
+                .event_queue
+                .push(EngineEvent::Gamepad(GamepadEvent::OnConnect {
+                    gamepad_id,
+                    name,
+                }));
         }
         GilrsEventType::Disconnected => {
             // Remove from cache
             engine_state.gamepad_cache.remove_gamepad(gamepad_id);
 
-            engine_state.event_queue.push(EngineEventEnvelope {
-                id: 0,
-                event: EngineEvent::Gamepad(GamepadEvent::OnDisconnect { gamepad_id }),
-            });
+            engine_state
+                .event_queue
+                .push(EngineEvent::Gamepad(GamepadEvent::OnDisconnect {
+                    gamepad_id,
+                }));
         }
         GilrsEventType::ButtonPressed(button, _code) => {
             let button_mapped = super::cmd::events::convert_gilrs_button(button);
@@ -117,15 +120,14 @@ fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
                 cache.update_button(button_mapped, state, value);
             }
 
-            engine_state.event_queue.push(EngineEventEnvelope {
-                id: 0,
-                event: EngineEvent::Gamepad(GamepadEvent::OnButton {
+            engine_state
+                .event_queue
+                .push(EngineEvent::Gamepad(GamepadEvent::OnButton {
                     gamepad_id,
                     button: button_mapped,
                     state,
                     value,
-                }),
-            });
+                }));
         }
         GilrsEventType::ButtonReleased(button, _code) => {
             let button_mapped = super::cmd::events::convert_gilrs_button(button);
@@ -140,15 +142,14 @@ fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
                 cache.update_button(button_mapped, state, value);
             }
 
-            engine_state.event_queue.push(EngineEventEnvelope {
-                id: 0,
-                event: EngineEvent::Gamepad(GamepadEvent::OnButton {
+            engine_state
+                .event_queue
+                .push(EngineEvent::Gamepad(GamepadEvent::OnButton {
                     gamepad_id,
                     button: button_mapped,
                     state,
                     value,
-                }),
-            });
+                }));
         }
         GilrsEventType::ButtonChanged(button, value, _code) => {
             let button_mapped = super::cmd::events::convert_gilrs_button(button);
@@ -166,15 +167,14 @@ fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
                 cache.update_button(button_mapped, state, value);
             }
 
-            engine_state.event_queue.push(EngineEventEnvelope {
-                id: 0,
-                event: EngineEvent::Gamepad(GamepadEvent::OnButton {
+            engine_state
+                .event_queue
+                .push(EngineEvent::Gamepad(GamepadEvent::OnButton {
                     gamepad_id,
                     button: button_mapped,
                     state,
                     value,
-                }),
-            });
+                }));
         }
         GilrsEventType::AxisChanged(axis, value, _code) => {
             let axis_mapped = super::cmd::events::convert_gilrs_axis(axis);
@@ -189,14 +189,13 @@ fn process_gilrs_event(engine_state: &mut EngineState, event: GilrsEvent) {
                 let adjusted_value = cache.get_axis_value(axis_mapped);
                 cache.update_axis(axis_mapped, value);
 
-                engine_state.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Gamepad(GamepadEvent::OnAxis {
+                engine_state
+                    .event_queue
+                    .push(EngineEvent::Gamepad(GamepadEvent::OnAxis {
                         gamepad_id,
                         axis: axis_mapped,
                         value: adjusted_value,
-                    }),
-                });
+                    }));
             }
         }
         _ => {}

@@ -1,7 +1,7 @@
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const VULFRAM_CORE = require('./vulfram-core.node');
+const VULFRAM_CORE = require('./vulfram_core.node');
 
 export interface BufferResult {
   buffer: Buffer;
@@ -26,6 +26,10 @@ export function engineInit(): number {
 
 export function engineReceiveQueue(): BufferResult {
   return VULFRAM_CORE.engineReceiveQueue();
+}
+
+export function engineReceiveEvents(): BufferResult {
+  return VULFRAM_CORE.engineReceiveEvents();
 }
 
 export function engineSendQueue(data: Buffer): number {

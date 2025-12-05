@@ -3,29 +3,6 @@ use serde::{Deserialize, Serialize};
 use super::common::{ElementState, TouchPhase};
 use crate::core::units::Vector2;
 
-/// Mouse button types
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum MouseButton {
-    Left = 0,
-    Right = 1,
-    Middle = 2,
-    Back = 3,
-    Forward = 4,
-    Other(u8),
-}
-
-/// Pointer type for unified mouse/touch handling
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PointerType {
-    Mouse = 0,
-    Touch = 1,
-    Pen = 2,
-}
-
 /// Mouse scroll delta type
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
@@ -44,7 +21,7 @@ pub enum PointerEvent {
     #[serde(rename_all = "camelCase")]
     OnMove {
         window_id: u32,
-        pointer_type: PointerType,
+        pointer_type: u32,
         pointer_id: u64,
         position: Vector2,
     },
@@ -53,7 +30,7 @@ pub enum PointerEvent {
     #[serde(rename_all = "camelCase")]
     OnEnter {
         window_id: u32,
-        pointer_type: PointerType,
+        pointer_type: u32,
         pointer_id: u64,
     },
 
@@ -61,7 +38,7 @@ pub enum PointerEvent {
     #[serde(rename_all = "camelCase")]
     OnLeave {
         window_id: u32,
-        pointer_type: PointerType,
+        pointer_type: u32,
         pointer_id: u64,
     },
 
@@ -69,9 +46,9 @@ pub enum PointerEvent {
     #[serde(rename_all = "camelCase")]
     OnButton {
         window_id: u32,
-        pointer_type: PointerType,
+        pointer_type: u32,
         pointer_id: u64,
-        button: MouseButton,
+        button: u32,
         state: ElementState,
         position: Vector2,
     },

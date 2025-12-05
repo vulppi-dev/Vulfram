@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::core::cmd::events::{ElementState, GamepadAxis, GamepadButton};
+use crate::core::cmd::events::ElementState;
 
 /// Dead zone threshold for analog sticks and triggers
 pub const GAMEPAD_AXIS_DEAD_ZONE: f32 = 0.1;
@@ -18,8 +18,8 @@ pub struct GamepadStateCache {
     pub connected: bool,
     #[allow(dead_code)]
     pub name: String,
-    pub axes: HashMap<GamepadAxis, f32>,
-    pub buttons: HashMap<GamepadButton, (ElementState, f32)>,
+    pub axes: HashMap<u32, f32>,
+    pub buttons: HashMap<u32, (ElementState, f32)>,
 }
 
 impl GamepadStateCache {
@@ -45,7 +45,7 @@ impl GamepadStateCache {
     }
 
     /// Check if axis value changed significantly
-    pub fn axis_changed(&self, axis: GamepadAxis, new_value: f32) -> bool {
+    pub fn axis_changed(&self, axis: u32, new_value: f32) -> bool {
         let adjusted_value = Self::apply_dead_zone(new_value);
 
         if let Some(&cached_value) = self.axes.get(&axis) {
@@ -56,12 +56,7 @@ impl GamepadStateCache {
     }
 
     /// Check if button state or value changed significantly
-    pub fn button_changed(
-        &self,
-        button: GamepadButton,
-        new_state: ElementState,
-        new_value: f32,
-    ) -> bool {
+    pub fn button_changed(&self, button: u32, new_state: ElementState, new_value: f32) -> bool {
         if let Some(&(cached_state, cached_value)) = self.buttons.get(&button) {
             // State changed OR value changed significantly
             cached_state != new_state
@@ -73,18 +68,18 @@ impl GamepadStateCache {
     }
 
     /// Get cached axis value with dead zone applied
-    pub fn get_axis_value(&self, axis: GamepadAxis) -> f32 {
+    pub fn get_axis_value(&self, axis: u32) -> f32 {
         self.axes.get(&axis).copied().unwrap_or(0.0)
     }
 
     /// Update axis cache
-    pub fn update_axis(&mut self, axis: GamepadAxis, value: f32) {
+    pub fn update_axis(&mut self, axis: u32, value: f32) {
         let adjusted_value = Self::apply_dead_zone(value);
         self.axes.insert(axis, adjusted_value);
     }
 
     /// Update button cache
-    pub fn update_button(&mut self, button: GamepadButton, state: ElementState, value: f32) {
+    pub fn update_button(&mut self, button: u32, state: ElementState, value: f32) {
         self.buttons.insert(button, (state, value));
     }
 }

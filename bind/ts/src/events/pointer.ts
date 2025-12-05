@@ -3,21 +3,26 @@ import type { Vector2, ElementState, TouchPhase } from './common';
 // MARK: Pointer Events
 
 /** Mouse button types */
-export type MouseButton =
-  | 'left'
-  | 'right'
-  | 'middle'
-  | 'back'
-  | 'forward'
-  | { other: number };
+export enum MouseButton {
+  Left = 0,
+  Right = 1,
+  Middle = 2,
+  Back = 3,
+  Forward = 4,
+  // Other represented as number > 4
+}
 
 /** Pointer type for unified mouse/touch handling */
-export type PointerType = 'mouse' | 'touch' | 'pen';
+export enum PointerType {
+  Mouse = 0,
+  Touch = 1,
+  Pen = 2,
+}
 
 /** Mouse scroll delta type */
 export type ScrollDelta =
-  | { type: 'line'; value: Vector2 }
-  | { type: 'pixel'; value: Vector2 };
+  | { type: 0; value: Vector2 } // Line
+  | { type: 1; value: Vector2 }; // Pixel
 
 /**
  * Event fired when the pointer (mouse, touch, or pen) moves.

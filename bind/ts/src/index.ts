@@ -1,7 +1,11 @@
 import * as VULFRAM_CORE from './napi';
 import { pack, unpack } from 'msgpackr';
 import type { VulframResult } from './enums';
-import type { EngineBatchCmds, EngineBatchEvents } from './cmds';
+import type {
+  EngineBatchCmds,
+  EngineBatchEvents,
+  EngineBatchResponses,
+} from './cmds';
 
 export * from './cmds';
 export * from './dev';
@@ -193,24 +197,54 @@ export function vulframSendQueue(batch: EngineBatchCmds): VulframResult {
 }
 
 /**
- * Receives and processes events from the engine.
- * Returns a batch of events that occurred since the last call.
+ * Receives and processes command responses from the engine.
+ * Returns a batch of responses to commands sent via vulframSendQueue.
  *
  * @example
  * ```typescript
- * const [events, result] = vulframReceiveQueue();
+ * const [responses, result] = vulframReceiveQueue();
  * if (result === VulframResult.Success) {
- *   for (const event of events.events) {
- *     if (event.kind === 'window') {
+ *   for (const response of responses) {
+ *     if (response.response.type === 'window-create') {
+ *       console.log('Window created:', response.response.content);
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export function vulframReceiveQueue(): [EngineBatchResponses, VulframResult] {
+  return trackBenchmark('vulframReceiveQueue', () => {
+    const { buffer, result } = VULFRAM_CORE.engineReceiveQueue();
+
+    // If buffer is empty, return empty array
+    if (buffer.length === 0) {
+      return [[], result];
+    }
+
+    const responses = unpack(buffer) as EngineBatchResponses;
+    return [responses, result];
+  });
+}
+
+/**
+ * Receives and processes spontaneous events from the engine.
+ * Returns a batch of events (input, window changes, system events) that occurred since the last call.
+ *
+ * @example
+ * ```typescript
+ * const [events, result] = vulframReceiveEvents();
+ * if (result === VulframResult.Success) {
+ *   for (const event of events) {
+ *     if (event.type === 'window') {
  *       console.log('Window event:', event.content);
  *     }
  *   }
  * }
  * ```
  */
-export function vulframReceiveQueue(): [EngineBatchEvents, VulframResult] {
-  return trackBenchmark('vulframReceiveQueue', () => {
-    const { buffer, result } = VULFRAM_CORE.engineReceiveQueue();
+export function vulframReceiveEvents(): [EngineBatchEvents, VulframResult] {
+  return trackBenchmark('vulframReceiveEvents', () => {
+    const { buffer, result } = VULFRAM_CORE.engineReceiveEvents();
 
     // If buffer is empty, return empty array
     if (buffer.length === 0) {

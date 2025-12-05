@@ -3,41 +3,42 @@ import type { ElementState } from './common';
 // MARK: Gamepad Events
 
 /** Gamepad button types following standard gamepad mapping */
-export type GamepadButton =
+export enum GamepadButton {
   // Face buttons
-  | 'south' // A / Cross
-  | 'east' // B / Circle
-  | 'west' // X / Square
-  | 'north' // Y / Triangle
+  South = 0, // A / Cross
+  East = 1, // B / Circle
+  West = 2, // X / Square
+  North = 3, // Y / Triangle
   // Shoulder buttons
-  | 'left-bumper'
-  | 'right-bumper'
-  | 'left-trigger'
-  | 'right-trigger'
+  LeftBumper = 4,
+  RightBumper = 5,
+  LeftTrigger = 6,
+  RightTrigger = 7,
   // Center buttons
-  | 'select'
-  | 'start'
-  | 'mode' // Guide / Home
+  Select = 8,
+  Start = 9,
+  Mode = 10, // Guide / Home
   // Stick buttons
-  | 'left-stick'
-  | 'right-stick'
+  LeftStick = 11,
+  RightStick = 12,
   // D-pad
-  | 'dpad-up'
-  | 'dpad-down'
-  | 'dpad-left'
-  | 'dpad-right'
-  // Other
-  | { other: number };
+  DpadUp = 13,
+  DpadDown = 14,
+  DpadLeft = 15,
+  DpadRight = 16,
+  // Other represented as number > 16
+}
 
 /** Gamepad axis types */
-export type GamepadAxis =
-  | 'left-stick-x'
-  | 'left-stick-y'
-  | 'right-stick-x'
-  | 'right-stick-y'
-  | 'left-trigger'
-  | 'right-trigger'
-  | { other: number };
+export enum GamepadAxis {
+  LeftStickX = 0,
+  LeftStickY = 1,
+  RightStickX = 2,
+  RightStickY = 3,
+  LeftTrigger = 4,
+  RightTrigger = 5,
+  // Other represented as number > 5
+}
 
 /**
  * Event fired when a gamepad is connected to the system.

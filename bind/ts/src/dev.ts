@@ -5,12 +5,15 @@ import {
   vulframGetProfiling,
   vulframInit,
   vulframReceiveQueue,
+  vulframReceiveEvents,
   vulframResetBenchmarks,
   vulframSetBenchmark,
   VulframResult,
   vulframSendQueue,
   vulframTick,
   startLoop,
+  KeyCode,
+  ElementState,
 } from './index';
 
 // Enable benchmark tracking
@@ -137,18 +140,17 @@ const disposeLoop = startLoop(() => {
   // Tick engine
   vulframTick(currentTime, deltaTime);
 
-  // Process events
-  const [events, result] = vulframReceiveQueue();
-
-  if (result !== VulframResult.Success) {
-    console.error('Failed to receive events:', result);
+  // Process command responses
+  const [responses, responseResult] = vulframReceiveQueue();
+  if (responseResult !== VulframResult.Success) {
+    console.error('Failed to receive responses:', responseResult);
     return;
   }
 
-  for (const event of events) {
+  for (const response of responses) {
     // Handle command results
-    if (event.type === 'window-create') {
-      const content = event.content;
+    if (response.type === 'window-create') {
+      const content = response.content;
       if (content.success) {
         windowIds.push(content.content);
         console.log(`✓ Window created with ID: ${content.content}`);
@@ -156,8 +158,16 @@ const disposeLoop = startLoop(() => {
         console.error(`✗ Failed to create window: ${content.message}`);
       }
     }
+  }
 
-    // Handle window events
+  // Process spontaneous events (input, window events, etc)
+  const [events, eventsResult] = vulframReceiveEvents();
+  if (eventsResult !== VulframResult.Success) {
+    console.error('Failed to receive events:', eventsResult);
+    return;
+  }
+
+  for (const event of events) {
     if (event.type === 'window') {
       const windowEvent = event.content;
 
@@ -192,7 +202,10 @@ const disposeLoop = startLoop(() => {
         const keyData = keyboardEvent.data;
 
         // Check for ESC key press
-        if (keyData.keyCode === 'escape' && keyData.state === 'pressed') {
+        if (
+          keyData.keyCode === KeyCode.Escape &&
+          keyData.state === ElementState.Pressed
+        ) {
           console.log('\n🔴 ESC pressed! Closing all windows...\n');
 
           // Send close commands for all windows
@@ -210,7 +223,7 @@ const disposeLoop = startLoop(() => {
         }
 
         // Log other key presses
-        if (keyData.state === 'pressed' && !keyData.repeat) {
+        if (keyData.state === ElementState.Pressed && !keyData.repeat) {
           console.log(
             `Key pressed: ${keyData.keyCode} in window ${keyData.windowId}`,
           );
@@ -224,7 +237,7 @@ const disposeLoop = startLoop(() => {
 
       if (pointerEvent.event === 'on-button') {
         const buttonData = pointerEvent.data;
-        if (buttonData.state === 'pressed') {
+        if (buttonData.state === ElementState.Pressed) {
           console.log(
             `Mouse button ${JSON.stringify(buttonData.button)} pressed at [${buttonData.position[0].toFixed(1)}, ${buttonData.position[1].toFixed(1)}] in window ${buttonData.windowId}`,
           );

@@ -29,6 +29,14 @@ mod ffi_exports {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn engine_receive_events(
+        out_ptr: *mut *const u8,
+        out_length: *mut usize,
+    ) -> u32 {
+        core::engine_receive_events(out_ptr, out_length) as u32
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn engine_upload_buffer(
         bfr_id: u64,
         bfr_ptr: *const u8,
@@ -103,6 +111,31 @@ mod napi_exports {
         let ptr_ptr = &mut ptr as *mut *const u8;
 
         let result = core::engine_receive_queue(ptr_ptr, length_ptr) as u32;
+
+        if result != 0 || length == 0 {
+            return Ok(BufferResult {
+                buffer: Buffer::from(vec![]),
+                result,
+            });
+        }
+
+        // Copy data from internal buffer
+        let data = unsafe { std::slice::from_raw_parts(ptr, length) };
+
+        Ok(BufferResult {
+            buffer: Buffer::from(data.to_vec()),
+            result,
+        })
+    }
+
+    #[napi]
+    pub fn engine_receive_events() -> Result<BufferResult> {
+        let mut length: usize = 0;
+        let mut ptr: *const u8 = std::ptr::null();
+        let length_ptr = &mut length as *mut usize;
+        let ptr_ptr = &mut ptr as *mut *const u8;
+
+        let result = core::engine_receive_events(ptr_ptr, length_ptr) as u32;
 
         if result != 0 || length == 0 {
             return Ok(BufferResult {
@@ -234,6 +267,22 @@ mod lua_exports {
         Ok((lua.create_string(data)?, result))
     }
 
+    fn engine_receive_events(lua: &Lua, _: ()) -> LuaResult<(LuaString, u32)> {
+        let mut length: usize = 0;
+        let mut ptr: *const u8 = std::ptr::null();
+        let length_ptr = &mut length as *mut usize;
+        let ptr_ptr = &mut ptr as *mut *const u8;
+
+        let result = core::engine_receive_events(ptr_ptr, length_ptr) as u32;
+
+        if result != 0 || length == 0 {
+            return Ok((lua.create_string(&[])?, result));
+        }
+
+        let data = unsafe { std::slice::from_raw_parts(ptr, length) };
+        Ok((lua.create_string(data)?, result))
+    }
+
     fn engine_upload_buffer(_: &Lua, (id, data): (i64, LuaString)) -> LuaResult<u32> {
         let bytes = data.as_bytes();
         Ok(core::engine_upload_buffer(id as u64, bytes.as_ptr(), bytes.len()) as u32)
@@ -293,6 +342,10 @@ mod lua_exports {
         exports.set("dispose", lua.create_function(engine_dispose)?)?;
         exports.set("send_queue", lua.create_function(engine_send_queue)?)?;
         exports.set("receive_queue", lua.create_function(engine_receive_queue)?)?;
+        exports.set(
+            "receive_events",
+            lua.create_function(engine_receive_events)?,
+        )?;
         exports.set("upload_buffer", lua.create_function(engine_upload_buffer)?)?;
         exports.set(
             "download_buffer",
@@ -338,6 +391,23 @@ mod python_exports {
         let ptr_ptr = &mut ptr as *mut *const u8;
 
         let result = core::engine_receive_queue(ptr_ptr, length_ptr) as u32;
+
+        if result != 0 || length == 0 {
+            return Ok((PyBytes::new(py, &[]).into(), result));
+        }
+
+        let data = unsafe { std::slice::from_raw_parts(ptr, length) };
+        Ok((PyBytes::new(py, data).into(), result))
+    }
+
+    #[pyfunction]
+    fn engine_receive_events(py: Python) -> PyResult<(Py<PyBytes>, u32)> {
+        let mut length: usize = 0;
+        let mut ptr: *const u8 = std::ptr::null();
+        let length_ptr = &mut length as *mut usize;
+        let ptr_ptr = &mut ptr as *mut *const u8;
+
+        let result = core::engine_receive_events(ptr_ptr, length_ptr) as u32;
 
         if result != 0 || length == 0 {
             return Ok((PyBytes::new(py, &[]).into(), result));
@@ -409,6 +479,7 @@ mod python_exports {
         module.add_function(wrap_pyfunction!(engine_dispose, module)?)?;
         module.add_function(wrap_pyfunction!(engine_send_queue, module)?)?;
         module.add_function(wrap_pyfunction!(engine_receive_queue, module)?)?;
+        module.add_function(wrap_pyfunction!(engine_receive_events, module)?)?;
         module.add_function(wrap_pyfunction!(engine_upload_buffer, module)?)?;
         module.add_function(wrap_pyfunction!(engine_download_buffer, module)?)?;
         module.add_function(wrap_pyfunction!(engine_clear_buffer, module)?)?;

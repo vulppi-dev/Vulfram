@@ -7,37 +7,29 @@ use crate::core::cmd::win::engine_cmd_window_create;
 use crate::core::render::render_frames;
 
 use super::cmd::events::*;
-use super::cmd::{EngineEvent, EngineEventEnvelope};
+use super::cmd::{CommandResponse, CommandResponseEnvelope, EngineEvent};
 use super::singleton::EngineCustomEvents;
 use super::state::EngineState;
 
 impl ApplicationHandler<EngineCustomEvents> for EngineState {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue.push(EngineEventEnvelope {
-            id: 0,
-            event: EngineEvent::System(SystemEvent::OnResume),
-        });
+        self.event_queue
+            .push(EngineEvent::System(SystemEvent::OnResume));
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue.push(EngineEventEnvelope {
-            id: 0,
-            event: EngineEvent::System(SystemEvent::OnSuspend),
-        });
+        self.event_queue
+            .push(EngineEvent::System(SystemEvent::OnSuspend));
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue.push(EngineEventEnvelope {
-            id: 0,
-            event: EngineEvent::System(SystemEvent::OnExit),
-        });
+        self.event_queue
+            .push(EngineEvent::System(SystemEvent::OnExit));
     }
 
     fn memory_warning(&mut self, _event_loop: &ActiveEventLoop) {
-        self.event_queue.push(EngineEventEnvelope {
-            id: 0,
-            event: EngineEvent::System(SystemEvent::OnMemoryWarning),
-        });
+        self.event_queue
+            .push(EngineEvent::System(SystemEvent::OnMemoryWarning));
     }
 
     fn window_event(
@@ -85,14 +77,12 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     }
                 }
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnResize {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnResize {
                         window_id,
                         width: size.width,
                         height: size.height,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::Moved(position) => {
@@ -117,54 +107,46 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     }
                 }
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnMove {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnMove {
                         window_id,
                         position: new_pos,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::CloseRequested => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnCloseRequest { window_id }),
-                });
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnCloseRequest {
+                        window_id,
+                    }));
             }
 
             WinitWindowEvent::Destroyed => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnDestroy { window_id }),
-                });
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnDestroy { window_id }));
             }
 
             WinitWindowEvent::DroppedFile(path) => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnFileDrop {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnFileDrop {
                         window_id,
                         path: path.to_string_lossy().to_string(),
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::HoveredFile(path) => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnFileHover {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnFileHover {
                         window_id,
                         path: path.to_string_lossy().to_string(),
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::HoveredFileCancelled => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnFileHoverCancel { window_id }),
-                });
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnFileHoverCancel {
+                        window_id,
+                    }));
             }
 
             WinitWindowEvent::Focused(focused) => {
@@ -179,10 +161,11 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 // Update cache
                 cache.focused = focused;
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnFocus { window_id, focused }),
-                });
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnFocus {
+                        window_id,
+                        focused,
+                    }));
             }
 
             WinitWindowEvent::KeyboardInput {
@@ -202,9 +185,8 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     ElementState::Released
                 };
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Keyboard(KeyboardEvent::OnInput {
+                self.event_queue
+                    .push(EngineEvent::Keyboard(KeyboardEvent::OnInput {
                         window_id,
                         key_code,
                         state,
@@ -212,8 +194,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                         repeat: event.repeat,
                         text: event.text.map(|s| s.to_string()),
                         modifiers: self.modifiers_state,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::ModifiersChanged(modifiers) => {
@@ -234,13 +215,11 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 self.input_cache.keyboard.modifiers = new_modifiers;
                 self.modifiers_state = new_modifiers;
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Keyboard(KeyboardEvent::OnModifiersChange {
+                self.event_queue
+                    .push(EngineEvent::Keyboard(KeyboardEvent::OnModifiersChange {
                         window_id,
                         modifiers: new_modifiers,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::Ime(ime) => {
@@ -256,10 +235,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     }
                     winit::event::Ime::Disabled => KeyboardEvent::OnImeDisable { window_id },
                 };
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Keyboard(ime_event),
-                });
+                self.event_queue.push(EngineEvent::Keyboard(ime_event));
             }
 
             WinitWindowEvent::CursorMoved { position, .. } => {
@@ -275,37 +251,31 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 pointer_cache.position = cursor_pos;
                 self.cursor_positions.insert(window_id, cursor_pos);
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnMove {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnMove {
                         window_id,
-                        pointer_type: PointerType::Mouse,
+                        pointer_type: 0, // Mouse
                         pointer_id: 0,
                         position: cursor_pos,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::CursorEntered { .. } => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnEnter {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnEnter {
                         window_id,
-                        pointer_type: PointerType::Mouse,
+                        pointer_type: 0, // Mouse
                         pointer_id: 0,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::CursorLeft { .. } => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnLeave {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnLeave {
                         window_id,
-                        pointer_type: PointerType::Mouse,
+                        pointer_type: 0, // Mouse
                         pointer_id: 0,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::MouseWheel { delta, phase, .. } => {
@@ -317,14 +287,12 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 };
                 let touch_phase = convert_touch_phase(phase);
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnScroll {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnScroll {
                         window_id,
                         delta: scroll_delta,
                         phase: touch_phase,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::MouseInput { state, button, .. } => {
@@ -342,73 +310,63 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     .copied()
                     .unwrap_or([0.0, 0.0]);
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnButton {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnButton {
                         window_id,
-                        pointer_type: PointerType::Mouse,
+                        pointer_type: 0, // Mouse
                         pointer_id: 0,
                         button: btn,
                         state: elem_state,
                         position,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::PinchGesture { delta, phase, .. } => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnPinchGesture {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnPinchGesture {
                         window_id,
                         delta,
                         phase: convert_touch_phase(phase),
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::PanGesture { delta, phase, .. } => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnPanGesture {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnPanGesture {
                         window_id,
                         delta: [delta.x, delta.y],
                         phase: convert_touch_phase(phase),
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::RotationGesture { delta, phase, .. } => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnRotationGesture {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnRotationGesture {
                         window_id,
                         delta,
                         phase: convert_touch_phase(phase),
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::DoubleTapGesture { .. } => {
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnDoubleTapGesture { window_id }),
-                });
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnDoubleTapGesture {
+                        window_id,
+                    }));
             }
 
             WinitWindowEvent::Touch(touch) => {
                 let phase = convert_touch_phase(touch.phase);
                 let pressure = touch.force.map(|f| f.normalized() as f32);
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Pointer(PointerEvent::OnTouch {
+                self.event_queue
+                    .push(EngineEvent::Pointer(PointerEvent::OnTouch {
                         window_id,
                         pointer_id: touch.id,
                         phase,
                         position: [touch.location.x as f32, touch.location.y as f32],
                         pressure,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::ScaleFactorChanged {
@@ -435,15 +393,13 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     })
                     .unwrap_or((0, 0));
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnScaleFactorChange {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnScaleFactorChange {
                         window_id,
                         scale_factor,
                         new_width,
                         new_height,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::ThemeChanged(theme) => {
@@ -458,13 +414,11 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 // Update cache
                 cache.dark_mode = dark_mode;
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnThemeChange {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnThemeChange {
                         window_id,
                         dark_mode,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::Occluded(occluded) => {
@@ -478,13 +432,11 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 // Update cache
                 cache.occluded = occluded;
 
-                self.event_queue.push(EngineEventEnvelope {
-                    id: 0,
-                    event: EngineEvent::Window(WindowEvent::OnOcclude {
+                self.event_queue
+                    .push(EngineEvent::Window(WindowEvent::OnOcclude {
                         window_id,
                         occluded,
-                    }),
-                });
+                    }));
             }
 
             WinitWindowEvent::RedrawRequested => {
@@ -493,10 +445,10 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     if window_state.is_dirty && window_state.window.is_visible().unwrap_or(true) {
                         window_state.is_dirty = false;
 
-                        self.event_queue.push(EngineEventEnvelope {
-                            id: 0,
-                            event: EngineEvent::Window(WindowEvent::OnRedrawRequest { window_id }),
-                        });
+                        self.event_queue
+                            .push(EngineEvent::Window(WindowEvent::OnRedrawRequest {
+                                window_id,
+                            }));
 
                         render_frames(self);
                     }
@@ -517,9 +469,9 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
             EngineCustomEvents::CreateWindow(id, args) => {
                 let result = engine_cmd_window_create(self, event_loop, &args);
 
-                self.event_queue.push(EngineEventEnvelope {
+                self.response_queue.push(CommandResponseEnvelope {
                     id,
-                    event: EngineEvent::WindowCreate(result),
+                    response: CommandResponse::WindowCreate(result),
                 });
             }
         }

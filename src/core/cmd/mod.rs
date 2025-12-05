@@ -34,7 +34,7 @@ pub enum EngineCmd {
     CmdWindowSetCursorIcon(win::CmdWindowSetCursorIconArgs),
 }
 
-/// Engine event types sent from native to JavaScript
+/// Spontaneous engine events (input, window changes, system events)
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "content", rename_all = "kebab-case")]
 pub enum EngineEvent {
@@ -43,7 +43,12 @@ pub enum EngineEvent {
     Keyboard(events::KeyboardEvent),
     Gamepad(events::GamepadEvent),
     System(events::SystemEvent),
-    // MARK: Command answers
+}
+
+/// Command responses (answers to commands sent by user)
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "content", rename_all = "kebab-case")]
+pub enum CommandResponse {
     WindowCreate(win::CmdResultWindowCreate),
     WindowClose(win::CmdResultWindowClose),
     WindowSetTitle(win::CmdResultWindowSetTitle),
@@ -75,15 +80,17 @@ pub struct EngineCmdEnvelope {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct EngineEventEnvelope {
+pub struct CommandResponseEnvelope {
     pub id: u64,
     #[serde(flatten)]
-    pub event: EngineEvent,
+    pub response: CommandResponse,
 }
 
 pub type EngineBatchCmds = Vec<EngineCmdEnvelope>;
 
-pub type EngineBatchEvents = Vec<EngineEventEnvelope>;
+pub type EngineBatchEvents = Vec<EngineEvent>;
+
+pub type EngineBatchResponses = Vec<CommandResponseEnvelope>;
 
 pub fn engine_process_batch(
     engine: &mut EngineState,
@@ -98,142 +105,142 @@ pub fn engine_process_batch(
             }
             EngineCmd::CmdWindowClose(args) => {
                 let result = win::engine_cmd_window_close(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowClose(result),
+                    response: CommandResponse::WindowClose(result),
                 });
             }
             EngineCmd::CmdWindowSetTitle(args) => {
                 let result = win::engine_cmd_window_set_title(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetTitle(result),
+                    response: CommandResponse::WindowSetTitle(result),
                 });
             }
             EngineCmd::CmdWindowSetPosition(args) => {
                 let result = win::engine_cmd_window_set_position(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetPosition(result),
+                    response: CommandResponse::WindowSetPosition(result),
                 });
             }
             EngineCmd::CmdWindowGetPosition(args) => {
                 let result = win::engine_cmd_window_get_position(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowGetPosition(result),
+                    response: CommandResponse::WindowGetPosition(result),
                 });
             }
             EngineCmd::CmdWindowSetSize(args) => {
                 let result = win::engine_cmd_window_set_size(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetSize(result),
+                    response: CommandResponse::WindowSetSize(result),
                 });
             }
             EngineCmd::CmdWindowGetSize(args) => {
                 let result = win::engine_cmd_window_get_size(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowGetSize(result),
+                    response: CommandResponse::WindowGetSize(result),
                 });
             }
             EngineCmd::CmdWindowGetOuterSize(args) => {
                 let result = win::engine_cmd_window_get_outer_size(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowGetOuterSize(result),
+                    response: CommandResponse::WindowGetOuterSize(result),
                 });
             }
             EngineCmd::CmdWindowGetSurfaceSize(args) => {
                 let result = win::engine_cmd_window_get_surface_size(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowGetSurfaceSize(result),
+                    response: CommandResponse::WindowGetSurfaceSize(result),
                 });
             }
             EngineCmd::CmdWindowSetState(args) => {
                 let result = win::engine_cmd_window_set_state(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetState(result),
+                    response: CommandResponse::WindowSetState(result),
                 });
             }
             EngineCmd::CmdWindowGetState(args) => {
                 let result = win::engine_cmd_window_get_state(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowGetState(result),
+                    response: CommandResponse::WindowGetState(result),
                 });
             }
             EngineCmd::CmdWindowSetIcon(args) => {
                 let result = win::engine_cmd_window_set_icon(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetIcon(result),
+                    response: CommandResponse::WindowSetIcon(result),
                 });
             }
             EngineCmd::CmdWindowSetDecorations(args) => {
                 let result = win::engine_cmd_window_set_decorations(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetDecorations(result),
+                    response: CommandResponse::WindowSetDecorations(result),
                 });
             }
             EngineCmd::CmdWindowHasDecorations(args) => {
                 let result = win::engine_cmd_window_has_decorations(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowHasDecorations(result),
+                    response: CommandResponse::WindowHasDecorations(result),
                 });
             }
             EngineCmd::CmdWindowSetResizable(args) => {
                 let result = win::engine_cmd_window_set_resizable(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetResizable(result),
+                    response: CommandResponse::WindowSetResizable(result),
                 });
             }
             EngineCmd::CmdWindowIsResizable(args) => {
                 let result = win::engine_cmd_window_is_resizable(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowIsResizable(result),
+                    response: CommandResponse::WindowIsResizable(result),
                 });
             }
             EngineCmd::CmdWindowRequestAttention(args) => {
                 let result = win::engine_cmd_window_request_attention(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowRequestAttention(result),
+                    response: CommandResponse::WindowRequestAttention(result),
                 });
             }
             EngineCmd::CmdWindowFocus(args) => {
                 let result = win::engine_cmd_window_focus(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowFocus(result),
+                    response: CommandResponse::WindowFocus(result),
                 });
             }
             EngineCmd::CmdWindowSetCursorVisible(args) => {
                 let result = win::engine_cmd_window_set_cursor_visible(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetCursorVisible(result),
+                    response: CommandResponse::WindowSetCursorVisible(result),
                 });
             }
             EngineCmd::CmdWindowSetCursorGrab(args) => {
                 let result = win::engine_cmd_window_set_cursor_grab(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetCursorGrab(result),
+                    response: CommandResponse::WindowSetCursorGrab(result),
                 });
             }
             EngineCmd::CmdWindowSetCursorIcon(args) => {
                 let result = win::engine_cmd_window_set_cursor_icon(engine, &args);
-                engine.event_queue.push(EngineEventEnvelope {
+                engine.response_queue.push(CommandResponseEnvelope {
                     id: pack.id,
-                    event: EngineEvent::WindowSetCursorIcon(result),
+                    response: CommandResponse::WindowSetCursorIcon(result),
                 });
             }
         }

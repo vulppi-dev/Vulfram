@@ -1,10 +1,18 @@
 // MARK: Common Types
 
 /** Represents the state of an input element (pressed or released) */
-export type ElementState = 'released' | 'pressed';
+export enum ElementState {
+  Released = 0,
+  Pressed = 1,
+}
 
 /** Represents the phase of a touch/gesture event */
-export type TouchPhase = 'started' | 'moved' | 'ended' | 'cancelled';
+export enum TouchPhase {
+  Started = 0,
+  Moved = 1,
+  Ended = 2,
+  Cancelled = 3,
+}
 
 /** Represents keyboard modifier keys state */
 export interface ModifiersState {

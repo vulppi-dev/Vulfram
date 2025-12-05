@@ -17,26 +17,25 @@ import type {
 
 export type EngineCmd = WindowCmd;
 
-export interface EngineCmdEnvelope {
-  id: number;
-  type: EngineCmd['type'];
-  content: EngineCmd['content'];
-}
+export type EngineCmdEnvelope = EngineCmd & { id: number };
 
 export type EngineBatchCmds = EngineCmdEnvelope[];
 
-// MARK: Engine Events (includes both events and command results)
+// MARK: Command Responses (responses to commands sent via vulframSendQueue)
 
-export type EngineEventContent =
+export type CommandResponse = WindowCmdResult;
+
+export type CommandResponseEnvelope = CommandResponse & { id: number };
+
+export type EngineBatchResponses = CommandResponseEnvelope[];
+
+// MARK: Engine Events (spontaneous events from input, window changes, system)
+
+export type EngineEvent =
   | { type: 'window'; content: WindowEvent }
   | { type: 'pointer'; content: PointerEvent }
   | { type: 'keyboard'; content: KeyboardEvent }
   | { type: 'gamepad'; content: GamepadEvent }
-  | { type: 'system'; content: SystemEvent }
-  | WindowCmdResult;
+  | { type: 'system'; content: SystemEvent };
 
-export type EngineEventEnvelope = EngineEventContent & {
-  id: number;
-};
-
-export type EngineBatchEvents = EngineEventEnvelope[];
+export type EngineBatchEvents = EngineEvent[];

@@ -4,8 +4,8 @@ use winit::window::{Window, WindowId};
 
 use crate::core::buffers::Buffer;
 use crate::core::cache::{GamepadCacheManager, InputCacheManager, WindowCacheManager};
-use crate::core::cmd::EngineBatchEvents;
 use crate::core::cmd::events::ModifiersState;
+use crate::core::cmd::{EngineBatchEvents, EngineBatchResponses};
 use crate::core::units::{IVector2, Size, Vector2};
 
 /// Represents a window with its associated WGPU resources
@@ -40,7 +40,9 @@ pub struct EngineState {
 
     // Event system
     pub event_queue: EngineBatchEvents,
+    pub response_queue: EngineBatchResponses,
     pub(crate) serialized_events_buffer: Vec<u8>,
+    pub(crate) serialized_responses_buffer: Vec<u8>,
 
     // Time tracking
     pub(crate) time: u64,
@@ -100,7 +102,9 @@ impl EngineState {
             window_id_map: HashMap::new(),
             buffers: HashMap::new(),
             event_queue: Vec::new(),
+            response_queue: Vec::new(),
             serialized_events_buffer: Vec::new(),
+            serialized_responses_buffer: Vec::new(),
 
             window_id_counter: 0,
 
