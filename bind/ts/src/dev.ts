@@ -35,21 +35,9 @@ const createCommands: EngineCmdEnvelope[] = [
     id: nextCmdId++,
     type: 'cmd-window-create',
     content: {
-      title: 'Window 1 - Press ESC to close all',
+      title: 'Window - Press ESC to close all',
       size: [800, 600],
       position: [100, 100],
-      borderless: false,
-      resizable: true,
-      initialState: 'windowed',
-    },
-  },
-  {
-    id: nextCmdId++,
-    type: 'cmd-window-create',
-    content: {
-      title: 'Window 2 - Press ESC to close all',
-      size: [800, 600],
-      position: [950, 100],
       borderless: false,
       resizable: true,
       initialState: 'windowed',
@@ -262,7 +250,7 @@ const loopInterval = setInterval(() => {
 
   // Process events
   processEvents();
-}, 4); // ~244 FPS
+}, 1); // ~120 FPS
 
 // Handle process termination
 process.on('SIGINT', () => {

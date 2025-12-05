@@ -3,13 +3,13 @@ use std::cell::RefCell;
 use std::thread::{self, ThreadId};
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
-use super::cmd::EngineBatchCmds;
+use super::cmd::win::CmdWindowCreateArgs;
 use super::result::VulframResult;
 use super::state::EngineState;
 
 /// Custom events sent through the event loop
 pub enum EngineCustomEvents {
-    ProcessCommands(EngineBatchCmds),
+    CreateWindow(u64, CmdWindowCreateArgs),
 }
 
 /// Singleton container for engine state and event loop

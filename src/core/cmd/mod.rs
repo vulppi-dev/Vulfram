@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
-use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::EventLoopProxy;
 
 use crate::core::result::VulframResult;
+use crate::core::singleton::EngineCustomEvents;
 use crate::core::state::EngineState;
 
 pub mod events;
@@ -86,17 +87,14 @@ pub type EngineBatchEvents = Vec<EngineEventEnvelope>;
 
 pub fn engine_process_batch(
     engine: &mut EngineState,
-    event_loop: &ActiveEventLoop,
+    loop_proxy: &mut EventLoopProxy<EngineCustomEvents>,
     batch: EngineBatchCmds,
 ) -> VulframResult {
     for pack in batch {
         match pack.cmd {
             EngineCmd::CmdWindowCreate(args) => {
-                let result = win::engine_cmd_window_create(engine, event_loop, &args);
-                engine.event_queue.push(EngineEventEnvelope {
-                    id: pack.id,
-                    event: EngineEvent::WindowCreate(result),
-                });
+                let _ =
+                    loop_proxy.send_event(EngineCustomEvents::CreateWindow(pack.id, args.clone()));
             }
             EngineCmd::CmdWindowClose(args) => {
                 let result = win::engine_cmd_window_close(engine, &args);

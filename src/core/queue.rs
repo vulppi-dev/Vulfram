@@ -1,8 +1,10 @@
 use std::time::Instant;
 
+use crate::core::cmd::engine_process_batch;
+
 use super::cmd::EngineBatchCmds;
 use super::result::VulframResult;
-use super::singleton::{EngineCustomEvents, with_engine, with_engine_singleton};
+use super::singleton::{with_engine, with_engine_singleton};
 
 /// Send a batch of commands to the engine
 pub fn engine_send_queue(ptr: *const u8, length: usize) -> VulframResult {
@@ -16,12 +18,10 @@ pub fn engine_send_queue(ptr: *const u8, length: usize) -> VulframResult {
     };
 
     match with_engine_singleton(|engine| {
-        if let Some(proxy) = &engine.proxy {
-            let _ = proxy.send_event(EngineCustomEvents::ProcessCommands(batch));
-        }
+        engine_process_batch(&mut engine.state, engine.proxy.as_mut().unwrap(), batch)
     }) {
         Err(e) => return e,
-        Ok(_) => VulframResult::Success,
+        Ok(r) => r,
     }
 }
 

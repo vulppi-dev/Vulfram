@@ -3,10 +3,11 @@ use winit::event::WindowEvent as WinitWindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::core::cmd::win::engine_cmd_window_create;
 use crate::core::render::render_frames;
 
 use super::cmd::events::*;
-use super::cmd::{self, EngineEvent, EngineEventEnvelope};
+use super::cmd::{EngineEvent, EngineEventEnvelope};
 use super::singleton::EngineCustomEvents;
 use super::state::EngineState;
 
@@ -511,8 +512,13 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EngineCustomEvents) {
         match event {
-            EngineCustomEvents::ProcessCommands(batch) => {
-                let _ = cmd::engine_process_batch(self, event_loop, batch);
+            EngineCustomEvents::CreateWindow(id, args) => {
+                let result = engine_cmd_window_create(self, event_loop, &args);
+
+                self.event_queue.push(EngineEventEnvelope {
+                    id,
+                    event: EngineEvent::WindowCreate(result),
+                });
             }
         }
     }

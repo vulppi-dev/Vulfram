@@ -5,19 +5,15 @@
   "types": "index.d.ts",
   "scripts": {
     "build:ffi": "cargo build --release --features ffi --no-default-features",
-    "build:napi": "napi build --release -o bind/ts/src/napi",
-    "build:lua": "cargo build --release --features mlua --no-default-features",
-    "build:python": "maturin build --release --features pyo3",
+    "build:napi": "cargo build --release",
+    "build:lua": "cargo build --release --features lua --no-default-features",
+    "build:python": "cargo build --release --features python --no-default-features",
     "debug:ffi": "cargo build --features ffi --no-default-features",
-    "debug:napi": "napi build -o bind/ts/src/napi",
-    "debug:lua": "cargo build --features mlua --no-default-features",
-    "debug:python": "maturin build --features pyo3"
+    "debug:napi": "cargo build",
+    "debug:lua": "cargo build --features lua --no-default-features",
+    "debug:python": "cargo build --features python --no-default-features"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.5.0",
     "@types/bun": "^1.3.3"
-  },
-  "napi": {
-    "binaryName": "vulfram-core"
   }
 }

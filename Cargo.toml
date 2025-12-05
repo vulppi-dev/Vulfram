@@ -36,8 +36,8 @@ path = "src/lib.rs"
 default = ["napi"]  # Default to N-API export
 ffi = []  # C ABI / FFI export
 napi = ["dep:napi", "dep:napi-derive"]  # N-API export
-mlua = ["dep:mlua"]
-pyo3 = ["dep:pyo3"]
+lua = ["dep:mlua"]
+python = ["dep:pyo3"]
 
 [profile.dev]
 opt-level = 0

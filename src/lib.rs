@@ -199,7 +199,7 @@ mod napi_exports {
 // ============================================================================
 // Lua Exports - for Lua bindings via mlua
 // ============================================================================
-#[cfg(feature = "mlua")]
+#[cfg(feature = "lua")]
 #[allow(dead_code)]
 mod lua_exports {
     use super::core;
@@ -308,7 +308,7 @@ mod lua_exports {
 // ============================================================================
 // Python Exports - for Python bindings via PyO3
 // ============================================================================
-#[cfg(feature = "pyo3")]
+#[cfg(feature = "python")]
 #[allow(dead_code)]
 mod python_exports {
     use super::core;
