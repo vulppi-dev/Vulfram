@@ -24,6 +24,7 @@ napi = { version = "3.6", optional = true }
 napi-derive = { version = "3.4", optional = true }
 mlua = { version = "0.11.5", features = ["lua54", "module"], optional = true }
 pyo3 = { version = "0.27.2", features = ["extension-module"], optional = true }
+glam = { version = "0.30.9", features = ["serde"] }
 
 [build-dependencies]
 napi-build = "2.3.1"

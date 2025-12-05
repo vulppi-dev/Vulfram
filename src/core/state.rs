@@ -1,3 +1,4 @@
+use glam::{IVec2, UVec2, Vec2};
 use std::collections::HashMap;
 use std::sync::Arc;
 use winit::window::{Window, WindowId};
@@ -6,7 +7,6 @@ use crate::core::buffers::Buffer;
 use crate::core::cache::{GamepadCacheManager, InputCacheManager, WindowCacheManager};
 use crate::core::cmd::events::ModifiersState;
 use crate::core::cmd::{EngineBatchEvents, EngineBatchResponses};
-use crate::core::units::{IVector2, Size, Vector2};
 
 /// Represents a window with its associated WGPU resources
 pub struct WindowState {
@@ -15,10 +15,10 @@ pub struct WindowState {
     pub config: wgpu::SurfaceConfiguration,
 
     // Window state tracking
-    pub inner_position: IVector2,
-    pub outer_position: IVector2,
-    pub inner_size: Size,
-    pub outer_size: Size,
+    pub inner_position: IVec2,
+    pub outer_position: IVec2,
+    pub inner_size: UVec2,
+    pub outer_size: UVec2,
     pub(crate) is_dirty: bool,
 }
 
@@ -50,7 +50,7 @@ pub struct EngineState {
 
     // Input state
     pub(crate) modifiers_state: ModifiersState,
-    pub(crate) cursor_positions: HashMap<u32, Vector2>,
+    pub(crate) cursor_positions: HashMap<u32, Vec2>,
     pub(crate) gilrs: Option<gilrs::Gilrs>,
 
     // Event caching for optimization

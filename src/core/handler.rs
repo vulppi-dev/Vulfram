@@ -1,3 +1,4 @@
+use glam::{IVec2, UVec2, Vec2};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent as WinitWindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -45,7 +46,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
 
         match event {
             WinitWindowEvent::Resized(size) => {
-                let new_size = [size.width, size.height];
+                let new_size = UVec2::new(size.width, size.height);
                 let cache = self.window_cache.get_or_create(window_id);
 
                 // Only dispatch event if size actually changed
@@ -69,8 +70,8 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                         // Update size state
                         window_state.inner_size = new_size;
                         let outer_size = window_state.window.outer_size();
-                        window_state.outer_size = [outer_size.width, outer_size.height];
-                        cache.outer_size = [outer_size.width, outer_size.height];
+                        window_state.outer_size = UVec2::new(outer_size.width, outer_size.height);
+                        cache.outer_size = UVec2::new(outer_size.width, outer_size.height);
 
                         // Mark window as dirty to trigger redraw
                         window_state.is_dirty = true;
@@ -86,7 +87,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
             }
 
             WinitWindowEvent::Moved(position) => {
-                let new_pos = [position.x, position.y];
+                let new_pos = IVec2::new(position.x, position.y);
                 let cache = self.window_cache.get_or_create(window_id);
 
                 // Only dispatch event if position actually changed
@@ -102,8 +103,8 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 if let Some(window_state) = self.windows.get_mut(&window_id) {
                     window_state.inner_position = new_pos;
                     if let Ok(outer_pos) = window_state.window.outer_position() {
-                        window_state.outer_position = [outer_pos.x, outer_pos.y];
-                        cache.outer_position = [outer_pos.x, outer_pos.y];
+                        window_state.outer_position = IVec2::new(outer_pos.x, outer_pos.y);
+                        cache.outer_position = IVec2::new(outer_pos.x, outer_pos.y);
                     }
                 }
 
@@ -239,7 +240,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
             }
 
             WinitWindowEvent::CursorMoved { position, .. } => {
-                let cursor_pos = [position.x as f32, position.y as f32];
+                let cursor_pos = Vec2::new(position.x as f32, position.y as f32);
                 let pointer_cache = self.input_cache.get_or_create_pointer(window_id);
 
                 // Only dispatch event if position changed more than 1px
@@ -280,9 +281,11 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
 
             WinitWindowEvent::MouseWheel { delta, phase, .. } => {
                 let scroll_delta = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Line([x, y]),
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                        ScrollDelta::Line(Vec2::new(x, y))
+                    }
                     winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                        ScrollDelta::Pixel([pos.x as f32, pos.y as f32])
+                        ScrollDelta::Pixel(Vec2::new(pos.x as f32, pos.y as f32))
                     }
                 };
                 let touch_phase = convert_touch_phase(phase);
@@ -308,7 +311,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                     .cursor_positions
                     .get(&window_id)
                     .copied()
-                    .unwrap_or([0.0, 0.0]);
+                    .unwrap_or(Vec2::new(0.0, 0.0));
 
                 self.event_queue
                     .push(EngineEvent::Pointer(PointerEvent::OnButton {
@@ -334,7 +337,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 self.event_queue
                     .push(EngineEvent::Pointer(PointerEvent::OnPanGesture {
                         window_id,
-                        delta: [delta.x, delta.y],
+                        delta: Vec2::new(delta.x, delta.y),
                         phase: convert_touch_phase(phase),
                     }));
             }
@@ -364,7 +367,7 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                         window_id,
                         pointer_id: touch.id,
                         phase,
-                        position: [touch.location.x as f32, touch.location.y as f32],
+                        position: Vec2::new(touch.location.x as f32, touch.location.y as f32),
                         pressure,
                     }));
             }

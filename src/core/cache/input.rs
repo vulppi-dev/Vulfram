@@ -1,7 +1,7 @@
+use glam::Vec2;
 use std::collections::HashMap;
 
 use crate::core::cmd::events::ModifiersState;
-use crate::core::units::Vector2;
 
 /// Cached keyboard state
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -20,18 +20,18 @@ impl KeyboardStateCache {
 /// Cached pointer (mouse) state per window
 #[derive(Debug, Clone)]
 pub struct PointerStateCache {
-    pub position: Vector2,
+    pub position: Vec2,
 }
 
 impl PointerStateCache {
     pub fn new() -> Self {
         Self {
-            position: [0.0, 0.0],
+            position: Vec2::new(0.0, 0.0),
         }
     }
 
     /// Check if position changed (with 1px threshold)
-    pub fn position_changed(&self, new_pos: Vector2) -> bool {
+    pub fn position_changed(&self, new_pos: Vec2) -> bool {
         (self.position[0] - new_pos[0]).abs() > 1.0 || (self.position[1] - new_pos[1]).abs() > 1.0
     }
 }

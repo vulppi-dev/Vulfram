@@ -1,9 +1,9 @@
+use glam::{IVec2, UVec2};
 use serde::{Deserialize, Serialize};
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 use crate::core::buffers::BufferData;
 use crate::core::state::EngineState;
-use crate::core::units::{IVector2, Size};
 
 use super::EngineWindowState;
 
@@ -48,7 +48,7 @@ pub fn engine_cmd_window_set_title(
 #[serde(default, rename_all = "camelCase")]
 pub struct CmdWindowSetPositionArgs {
     pub window_id: u32,
-    pub position: IVector2,
+    pub position: IVec2,
 }
 
 #[derive(Debug, Default, Serialize, Clone)]
@@ -91,7 +91,7 @@ pub struct CmdWindowGetPositionArgs {
 pub struct CmdResultWindowGetPosition {
     success: bool,
     message: String,
-    content: IVector2,
+    content: IVec2,
 }
 
 pub fn engine_cmd_window_get_position(
@@ -103,18 +103,18 @@ pub fn engine_cmd_window_get_position(
             Ok(position) => CmdResultWindowGetPosition {
                 success: true,
                 message: "Position retrieved successfully".to_string(),
-                content: [position.x, position.y],
+                content: IVec2::new(position.x, position.y),
             },
             Err(e) => CmdResultWindowGetPosition {
                 success: false,
                 message: format!("Failed to get position: {}", e),
-                content: [0, 0],
+                content: IVec2::new(0, 0),
             },
         },
         None => CmdResultWindowGetPosition {
             success: false,
             message: format!("Window with id {} not found", args.window_id),
-            content: [0, 0],
+            content: IVec2::new(0, 0),
         },
     }
 }
@@ -125,7 +125,7 @@ pub fn engine_cmd_window_get_position(
 #[serde(default, rename_all = "camelCase")]
 pub struct CmdWindowSetSizeArgs {
     pub window_id: u32,
-    pub size: Size,
+    pub size: UVec2,
 }
 
 #[derive(Debug, Default, Serialize, Clone)]
@@ -179,7 +179,7 @@ pub struct CmdWindowGetSizeArgs {
 pub struct CmdResultWindowGetSize {
     success: bool,
     message: String,
-    content: Size,
+    content: UVec2,
 }
 
 pub fn engine_cmd_window_get_size(
@@ -192,13 +192,13 @@ pub fn engine_cmd_window_get_size(
             CmdResultWindowGetSize {
                 success: true,
                 message: "Size retrieved successfully".to_string(),
-                content: [size.width, size.height],
+                content: UVec2::new(size.width, size.height),
             }
         }
         None => CmdResultWindowGetSize {
             success: false,
             message: format!("Window with id {} not found", args.window_id),
-            content: [0, 0],
+            content: UVec2::new(0, 0),
         },
     }
 }
@@ -216,7 +216,7 @@ pub struct CmdWindowGetOuterSizeArgs {
 pub struct CmdResultWindowGetOuterSize {
     success: bool,
     message: String,
-    content: Size,
+    content: UVec2,
 }
 
 pub fn engine_cmd_window_get_outer_size(
@@ -229,13 +229,13 @@ pub fn engine_cmd_window_get_outer_size(
             CmdResultWindowGetOuterSize {
                 success: true,
                 message: "Outer size retrieved successfully".to_string(),
-                content: [size.width, size.height],
+                content: UVec2::new(size.width, size.height),
             }
         }
         None => CmdResultWindowGetOuterSize {
             success: false,
             message: format!("Window with id {} not found", args.window_id),
-            content: [0, 0],
+            content: UVec2::new(0, 0),
         },
     }
 }
@@ -253,7 +253,7 @@ pub struct CmdWindowGetSurfaceSizeArgs {
 pub struct CmdResultWindowGetSurfaceSize {
     success: bool,
     message: String,
-    content: Size,
+    content: UVec2,
 }
 
 pub fn engine_cmd_window_get_surface_size(
@@ -264,12 +264,12 @@ pub fn engine_cmd_window_get_surface_size(
         Some(window_state) => CmdResultWindowGetSurfaceSize {
             success: true,
             message: "Surface size retrieved successfully".to_string(),
-            content: [window_state.config.width, window_state.config.height],
+            content: UVec2::new(window_state.config.width, window_state.config.height),
         },
         None => CmdResultWindowGetSurfaceSize {
             success: false,
             message: format!("Window with id {} not found", args.window_id),
-            content: [0, 0],
+            content: UVec2::new(0, 0),
         },
     }
 }

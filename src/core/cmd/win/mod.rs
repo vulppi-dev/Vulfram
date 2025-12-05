@@ -30,6 +30,6 @@ impl Default for EngineWindowState {
     }
 }
 
-fn window_size_default() -> crate::core::units::Size {
-    [800, 600]
+fn window_size_default() -> glam::UVec2 {
+    glam::UVec2::new(800, 600)
 }

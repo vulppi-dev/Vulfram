@@ -14,7 +14,6 @@ mod tick;
 // Public modules
 pub mod cmd;
 pub mod image;
-pub mod units;
 
 // Re-exports for public API
 pub use buffers::{engine_clear_buffer, engine_download_buffer, engine_upload_buffer};

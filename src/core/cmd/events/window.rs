@@ -1,6 +1,5 @@
+use glam::IVec2;
 use serde::{Deserialize, Serialize};
-
-use crate::core::units::IVector2;
 
 /// Window-related events
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +19,7 @@ pub enum WindowEvent {
 
     /// Window was moved
     #[serde(rename_all = "camelCase")]
-    OnMove { window_id: u32, position: IVector2 },
+    OnMove { window_id: u32, position: IVec2 },
 
     /// Window close was requested by user
     #[serde(rename_all = "camelCase")]

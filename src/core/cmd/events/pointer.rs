@@ -1,16 +1,16 @@
+use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
 use super::common::{ElementState, TouchPhase};
-use crate::core::units::Vector2;
 
 /// Mouse scroll delta type
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 pub enum ScrollDelta {
     /// Line-based scrolling (traditional mouse wheel)
-    Line(Vector2),
+    Line(Vec2),
     /// Pixel-based scrolling (touchpad)
-    Pixel(Vector2),
+    Pixel(Vec2),
 }
 
 /// Pointer (Mouse/Touch) events - unified for both input types
@@ -23,7 +23,7 @@ pub enum PointerEvent {
         window_id: u32,
         pointer_type: u32,
         pointer_id: u64,
-        position: Vector2,
+        position: Vec2,
     },
 
     /// Pointer entered window area
@@ -50,7 +50,7 @@ pub enum PointerEvent {
         pointer_id: u64,
         button: u32,
         state: ElementState,
-        position: Vector2,
+        position: Vec2,
     },
 
     /// Mouse wheel/touchpad scroll
@@ -67,7 +67,7 @@ pub enum PointerEvent {
         window_id: u32,
         pointer_id: u64,
         phase: TouchPhase,
-        position: Vector2,
+        position: Vec2,
         pressure: Option<f32>,
     },
 
@@ -83,7 +83,7 @@ pub enum PointerEvent {
     #[serde(rename_all = "camelCase")]
     OnPanGesture {
         window_id: u32,
-        delta: Vector2,
+        delta: Vec2,
         phase: TouchPhase,
     },
 

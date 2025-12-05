@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use glam::{IVec2, UVec2};
 use pollster::FutureExt;
 use serde::{Deserialize, Serialize};
 use winit::{
@@ -10,7 +11,6 @@ use winit::{
 
 use crate::core::render::cleanup_window_render_state;
 use crate::core::state::{EngineState, WindowState};
-use crate::core::units::{IVector2, Size};
 
 use super::{EngineWindowState, window_size_default};
 
@@ -21,8 +21,8 @@ use super::{EngineWindowState, window_size_default};
 pub struct CmdWindowCreateArgs {
     pub title: String,
     #[serde(default = "window_size_default")]
-    pub size: Size,
-    pub position: IVector2,
+    pub size: UVec2,
+    pub position: IVec2,
     pub borderless: bool,
     pub resizable: bool,
     pub initial_state: EngineWindowState,
@@ -204,20 +204,20 @@ pub fn engine_cmd_window_create(
             window,
             surface,
             config,
-            inner_position: [inner_position.x, inner_position.y],
-            outer_position: [outer_position.x, outer_position.y],
-            inner_size: [inner_size.width, inner_size.height],
-            outer_size: [outer_size.width, outer_size.height],
+            inner_position: IVec2::new(inner_position.x, inner_position.y),
+            outer_position: IVec2::new(outer_position.x, outer_position.y),
+            inner_size: UVec2::new(inner_size.width, inner_size.height),
+            outer_size: UVec2::new(outer_size.width, outer_size.height),
             is_dirty: true, // New window needs initial render
         },
     );
 
     // Initialize window cache
     let cache = engine.window_cache.get_or_create(win_id);
-    cache.inner_position = [inner_position.x, inner_position.y];
-    cache.outer_position = [outer_position.x, outer_position.y];
-    cache.inner_size = [inner_size.width, inner_size.height];
-    cache.outer_size = [outer_size.width, outer_size.height];
+    cache.inner_position = IVec2::new(inner_position.x, inner_position.y);
+    cache.outer_position = IVec2::new(outer_position.x, outer_position.y);
+    cache.inner_size = UVec2::new(inner_size.width, inner_size.height);
+    cache.outer_size = UVec2::new(outer_size.width, outer_size.height);
     cache.scale_factor = 1.0; // Will be updated on first scale factor change event
     cache.focused = false;
     cache.occluded = false;
