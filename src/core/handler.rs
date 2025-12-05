@@ -511,6 +511,8 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EngineCustomEvents) {
+        let start = std::time::Instant::now();
+
         match event {
             EngineCustomEvents::CreateWindow(id, args) => {
                 let result = engine_cmd_window_create(self, event_loop, &args);
@@ -521,5 +523,8 @@ impl ApplicationHandler<EngineCustomEvents> for EngineState {
                 });
             }
         }
+
+        // Track time spent in custom events to exclude from profiling
+        self.profiling.custom_events_ns += start.elapsed().as_nanos() as u64;
     }
 }

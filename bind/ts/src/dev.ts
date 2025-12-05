@@ -10,6 +10,7 @@ import {
   VulframResult,
   vulframSendQueue,
   vulframTick,
+  startLoop,
 } from './index';
 
 // Enable benchmark tracking
@@ -48,13 +49,95 @@ const createCommands: EngineCmdEnvelope[] = [
 vulframSendQueue(createCommands);
 
 // Main loop
-let running = true;
 let lastTime = Date.now();
 
 console.log('\nStarting main loop...');
 console.log('Press ESC in any window to close all windows and exit.\n');
 
-function processEvents() {
+function printBenchmark() {
+  console.log('\n📊 Benchmark Results:');
+  console.log('='.repeat(80));
+  const benchmarks = vulframGetBenchmarks();
+
+  for (const bench of benchmarks) {
+    console.log(`\n${bench.name}:`);
+    console.log(`  Calls:       ${bench.calls.toLocaleString()}`);
+    console.log(`  Total:       ${bench.totalMs.toFixed(3)} ms`);
+    console.log(
+      `  Avg:         ${bench.avgUs.toFixed(3)} µs (${bench.avgNs.toFixed(0)} ns)`,
+    );
+    console.log(`  Min:         ${bench.minUs.toFixed(3)} µs`);
+    console.log(`  Max:         ${bench.maxUs.toFixed(3)} µs`);
+    console.log(`  Last:        ${bench.lastUs.toFixed(3)} µs`);
+  }
+  console.log('\n' + '='.repeat(80));
+
+  // Print detailed profiling from last tick
+  const [profiling, profilingResult] = vulframGetProfiling();
+  if (profilingResult === VulframResult.Success) {
+    console.log('\n🔬 Detailed Tick Profiling (Last Tick):');
+    console.log('='.repeat(80));
+    console.log(
+      `Gamepad Processing:     ${profiling.gamepadProcessingUs.toFixed(3)} µs`,
+    );
+    console.log(
+      `Event Loop Pump:        ${profiling.eventLoopPumpUs.toFixed(3)} µs`,
+    );
+    console.log(
+      `Request Redraw:         ${profiling.requestRedrawUs.toFixed(3)} µs`,
+    );
+    console.log(
+      `Serialization:          ${profiling.serializationUs.toFixed(3)} µs`,
+    );
+    console.log(`Events Dispatched:      ${profiling.totalEventsDispatched}`);
+    console.log(`Events Cached (skip):   ${profiling.totalEventsCached}`);
+
+    const totalUs =
+      profiling.gamepadProcessingUs +
+      profiling.eventLoopPumpUs +
+      profiling.requestRedrawUs +
+      profiling.serializationUs;
+    console.log(`\nTotal Measured:         ${totalUs.toFixed(3)} µs`);
+
+    // Breakdown percentages
+    if (totalUs > 0) {
+      console.log('\nBreakdown:');
+      console.log(
+        `  Gamepad:       ${((profiling.gamepadProcessingUs / totalUs) * 100).toFixed(1)}%`,
+      );
+      console.log(
+        `  Event Loop:    ${((profiling.eventLoopPumpUs / totalUs) * 100).toFixed(1)}%`,
+      );
+      console.log(
+        `  Redraw:        ${((profiling.requestRedrawUs / totalUs) * 100).toFixed(1)}%`,
+      );
+      console.log(
+        `  Serialization: ${((profiling.serializationUs / totalUs) * 100).toFixed(1)}%`,
+      );
+    }
+    console.log('='.repeat(80));
+  }
+
+  // Cleanup
+  console.log('\nDisposing engine...');
+  const disposeResult = vulframDispose();
+  if (disposeResult === VulframResult.Success) {
+    console.log('Engine disposed successfully!');
+  } else {
+    console.error('Failed to dispose engine:', disposeResult);
+  }
+}
+
+const disposeLoop = startLoop(() => {
+  // Calculate delta time
+  const currentTime = Date.now();
+  const deltaTime = currentTime - lastTime;
+  lastTime = currentTime;
+
+  // Tick engine
+  vulframTick(currentTime, deltaTime);
+
+  // Process events
   const [events, result] = vulframReceiveQueue();
 
   if (result !== VulframResult.Success) {
@@ -80,7 +163,8 @@ function processEvents() {
 
       if (windowEvent.event === 'on-close-request') {
         console.log(`Window ${windowEvent.data.windowId} close requested`);
-        running = false;
+        disposeLoop();
+        printBenchmark();
       }
 
       if (windowEvent.event === 'on-destroy') {
@@ -121,7 +205,8 @@ function processEvents() {
           );
 
           vulframSendQueue(closeCommands);
-          running = false;
+          disposeLoop();
+          printBenchmark();
         }
 
         // Log other key presses
@@ -153,112 +238,22 @@ function processEvents() {
 
       if (systemEvent.event === 'on-exit') {
         console.log('System exit event received');
-        running = false;
+        disposeLoop();
+        printBenchmark();
       }
     }
   }
-}
-
-// Main loop
-const loopInterval = setInterval(() => {
-  if (!running) {
-    clearInterval(loopInterval);
-
-    // Print benchmark results
-    console.log('\n📊 Benchmark Results:');
-    console.log('='.repeat(80));
-    const benchmarks = vulframGetBenchmarks();
-
-    for (const bench of benchmarks) {
-      console.log(`\n${bench.name}:`);
-      console.log(`  Calls:       ${bench.calls.toLocaleString()}`);
-      console.log(`  Total:       ${bench.totalMs.toFixed(3)} ms`);
-      console.log(
-        `  Avg:         ${bench.avgUs.toFixed(3)} µs (${bench.avgNs.toFixed(0)} ns)`,
-      );
-      console.log(`  Min:         ${bench.minUs.toFixed(3)} µs`);
-      console.log(`  Max:         ${bench.maxUs.toFixed(3)} µs`);
-      console.log(`  Last:        ${bench.lastUs.toFixed(3)} µs`);
-    }
-    console.log('\n' + '='.repeat(80));
-
-    // Print detailed profiling from last tick
-    const [profiling, profilingResult] = vulframGetProfiling();
-    if (profilingResult === VulframResult.Success) {
-      console.log('\n🔬 Detailed Tick Profiling (Last Tick):');
-      console.log('='.repeat(80));
-      console.log(
-        `Gamepad Processing:     ${profiling.gamepadProcessingUs.toFixed(3)} µs`,
-      );
-      console.log(
-        `Event Loop Pump:        ${profiling.eventLoopPumpUs.toFixed(3)} µs`,
-      );
-      console.log(
-        `Request Redraw:         ${profiling.requestRedrawUs.toFixed(3)} µs`,
-      );
-      console.log(
-        `Serialization:          ${profiling.serializationUs.toFixed(3)} µs`,
-      );
-      console.log(`Events Dispatched:      ${profiling.totalEventsDispatched}`);
-      console.log(`Events Cached (skip):   ${profiling.totalEventsCached}`);
-
-      const totalUs =
-        profiling.gamepadProcessingUs +
-        profiling.eventLoopPumpUs +
-        profiling.requestRedrawUs +
-        profiling.serializationUs;
-      console.log(`\nTotal Measured:         ${totalUs.toFixed(3)} µs`);
-
-      // Breakdown percentages
-      if (totalUs > 0) {
-        console.log('\nBreakdown:');
-        console.log(
-          `  Gamepad:       ${((profiling.gamepadProcessingUs / totalUs) * 100).toFixed(1)}%`,
-        );
-        console.log(
-          `  Event Loop:    ${((profiling.eventLoopPumpUs / totalUs) * 100).toFixed(1)}%`,
-        );
-        console.log(
-          `  Redraw:        ${((profiling.requestRedrawUs / totalUs) * 100).toFixed(1)}%`,
-        );
-        console.log(
-          `  Serialization: ${((profiling.serializationUs / totalUs) * 100).toFixed(1)}%`,
-        );
-      }
-      console.log('='.repeat(80));
-    }
-
-    // Cleanup
-    console.log('\nDisposing engine...');
-    const disposeResult = vulframDispose();
-    if (disposeResult === VulframResult.Success) {
-      console.log('Engine disposed successfully!');
-    } else {
-      console.error('Failed to dispose engine:', disposeResult);
-    }
-
-    process.exit(0);
-  }
-
-  // Calculate delta time
-  const currentTime = Date.now();
-  const deltaTime = currentTime - lastTime;
-  lastTime = currentTime;
-
-  // Tick engine
-  vulframTick(currentTime, deltaTime);
-
-  // Process events
-  processEvents();
-}, 1); // ~120 FPS
+}); // ~244 FPS
 
 // Handle process termination
 process.on('SIGINT', () => {
   console.log('\n\nReceived SIGINT, shutting down...');
-  running = false;
+  disposeLoop();
+  printBenchmark();
 });
 
 process.on('SIGTERM', () => {
   console.log('\n\nReceived SIGTERM, shutting down...');
-  running = false;
+  disposeLoop();
+  printBenchmark();
 });

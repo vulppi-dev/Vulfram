@@ -18,6 +18,7 @@ pub fn engine_tick(time: u64, delta_time: u32) -> VulframResult {
         engine.state.profiling.gamepad_processing_ns = 0;
         engine.state.profiling.event_loop_pump_ns = 0;
         engine.state.profiling.total_events_cached = 0;
+        engine.state.profiling.custom_events_ns = 0;
 
         let events_before = engine.state.event_queue.len();
 
@@ -45,7 +46,10 @@ pub fn engine_tick(time: u64, delta_time: u32) -> VulframResult {
             // without blocking or yielding to the OS
             event_loop.pump_app_events(None, &mut engine.state);
 
-            engine.state.profiling.event_loop_pump_ns = pump_start.elapsed().as_nanos() as u64;
+            let total_pump_time = pump_start.elapsed().as_nanos() as u64;
+            // Subtract custom events time (window creation) from event loop pump time
+            engine.state.profiling.event_loop_pump_ns =
+                total_pump_time.saturating_sub(engine.state.profiling.custom_events_ns);
         }
 
         let events_after = engine.state.event_queue.len();

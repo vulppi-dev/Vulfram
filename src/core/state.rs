@@ -69,6 +69,7 @@ pub struct TickProfiling {
     pub serialization_ns: u64,
     pub total_events_dispatched: usize,
     pub total_events_cached: usize,
+    pub(crate) custom_events_ns: u64,
 }
 
 impl EngineState {

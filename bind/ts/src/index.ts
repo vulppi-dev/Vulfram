@@ -347,3 +347,35 @@ export function vulframGetProfiling(): [ProfilingData, VulframResult] {
     return [data, result];
   });
 }
+
+/**
+ * Starts the main loop for the engine, calling the provided loop function at approximately 244 FPS.
+ */
+export function startLoop(loop: () => void): () => void {
+  let running = true;
+  const targetFrameTime = 1000 / 244; // 244 FPS
+  function frame() {
+    if (!running) return;
+
+    const start = performance.now();
+    loop();
+    const end = performance.now();
+    const delta = end - start;
+    const delay = Math.max(0, targetFrameTime - delta);
+
+    if (delay === 0) {
+      console.warn(
+        'Frame took longer than target frame time of',
+        targetFrameTime.toFixed(2),
+        'ms',
+        ` (actual frame time: ${delta.toFixed(2)} ms)`,
+      );
+    }
+    setTimeout(frame, delay);
+  }
+  frame();
+
+  return function stopLoop() {
+    running = false;
+  };
+}
