@@ -135,7 +135,6 @@ pub struct LightRecord {
     pub layer_mask: u32,
     pub shadow_layer_mask: u32,
     pub shadow_softness: Option<f32>,
-    pub shadow_penumbra_length_scale: Option<f32>,
     pub cast_shadow: bool,
     pub is_dirty: bool,
 }
@@ -156,7 +155,6 @@ impl LightRecord {
             layer_mask,
             shadow_layer_mask,
             shadow_softness: None,
-            shadow_penumbra_length_scale: None,
             cast_shadow,
             is_dirty: true,
         }

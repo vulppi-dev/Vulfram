@@ -35,8 +35,6 @@ pub struct CmdLightCreateArgs {
     pub shadow_layer_mask: Option<u32>,
     #[serde(default)]
     pub shadow_softness: Option<f32>,
-    #[serde(default)]
-    pub shadow_penumbra_length_scale: Option<f32>,
     #[serde(default = "crate::core::resources::common::default_true")]
     pub active: bool,
     #[serde(default = "crate::core::resources::common::default_true")]
@@ -67,7 +65,6 @@ pub struct CmdLightUpdateArgs {
     pub layer_mask: Option<u32>,
     pub shadow_layer_mask: Option<u32>,
     pub shadow_softness: Option<f32>,
-    pub shadow_penumbra_length_scale: Option<f32>,
     pub active: Option<bool>,
     pub cast_shadow: Option<bool>,
 }
@@ -161,7 +158,6 @@ pub fn engine_cmd_light_create(
         args.cast_shadow,
     );
     record.shadow_softness = args.shadow_softness.map(|v| v.max(0.0));
-    record.shadow_penumbra_length_scale = args.shadow_penumbra_length_scale.map(|v| v.max(0.0));
     entities.lights.insert(args.light_id, record);
     mark_realm_windows_dirty(engine, args.realm_id);
     galfus_log::galfus_log_debug!(
@@ -283,9 +279,6 @@ pub fn engine_cmd_light_update(
     if let Some(shadow_softness) = args.shadow_softness {
         record.shadow_softness = Some(shadow_softness.max(0.0));
     }
-    if let Some(shadow_penumbra_length_scale) = args.shadow_penumbra_length_scale {
-        record.shadow_penumbra_length_scale = Some(shadow_penumbra_length_scale.max(0.0));
-    }
     if let Some(active) = args.active {
         record.active = active;
     }
@@ -339,7 +332,7 @@ pub fn engine_cmd_light_dispose(
     };
     if entities.lights.remove(&args.light_id).is_some() {
         for render_state in engine.render.states.values_mut() {
-            if let Some(shadow) = render_state.shadow.as_mut() {
+            if let Some(shadow) = render_state.shadow_3d.as_mut() {
                 shadow.mark_dirty();
             }
         }

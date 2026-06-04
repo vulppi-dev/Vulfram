@@ -1,4 +1,4 @@
-# CmdShadowConfigure
+# CmdShadow3dConfigure
 
 Configures global shadow mapping settings for a window.
 
@@ -7,9 +7,9 @@ Configures global shadow mapping settings for a window.
 | Field    | Type         | Description                     |
 | -------- | ------------ | ------------------------------- |
 | windowId | u32          | ID of the window                |
-| config   | ShadowConfig | Shadow configuration parameters |
+| config   | Shadow3dConfig | Shadow configuration parameters |
 
-### ShadowConfig
+### Shadow3dConfig
 
 | Field           | Type | Description                                                   |
 | --------------- | ---- | ------------------------------------------------------------- |
@@ -25,7 +25,7 @@ All fields are optional when sending from host (will use defaults).
 
 ## Response
 
-Returns `CmdResultShadowConfigure`:
+Returns `CmdResultShadow3dConfigure`:
 
 | Field   | Type   | Description                           |
 | ------- | ------ | ------------------------------------- |

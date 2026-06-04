@@ -770,6 +770,7 @@ struct CameraUniform {
     model_position: vec4<f32>,
     light_offset_count: vec4<u32>,
     shadow_params: vec4<f32>,
+    shadow_controls: vec4<f32>,
 }
 
 @group(0) @binding(0)
@@ -782,21 +783,17 @@ struct Light2D {
     position: vec4<f32>,
     color: vec4<f32>,
     intensity_range: vec2<f32>,
-    shadow_softness_penumbra: vec2<f32>,
+    shadow_softness: f32,
+    _padding_softness: f32,
+    light_radius: f32,
+    _padding0: u32,
     kind_flags: vec2<u32>,
     shadow_layer_mask: u32,
-    _pad0: u32,
+    shadow_index: u32,
+    _padding1: vec2<u32>,
 }
 @group(0) @binding(5) var<storage, read> lights_2d: array<Light2D>;
-struct Occluder2D {
-    center: vec4<f32>,
-    axis_x: vec4<f32>,
-    axis_y: vec4<f32>,
-    extents_height: vec4<f32>,
-    shadow_layer_mask: u32,
-    _pad0: vec3<u32>,
-}
-@group(0) @binding(6) var<storage, read> occluders_2d: array<Occluder2D>;
+@group(0) @binding(6) var shadow_mask_2d: texture_2d_array<f32>;
 
 struct MaterialParams {
     input_indices: vec4<u32>,
@@ -890,216 +887,90 @@ fn load_scene_depth(pixel: vec2<i32>) -> f32 {
     return textureLoad(frame_scene_depth, pixel, 0);
 }
 
-fn hash12(p: vec2<f32>) -> f32 {
-    let h = dot(p, vec2<f32>(127.1, 311.7));
-    return fract(sin(h) * 43758.5453123);
-}
-
-fn rotate2(v: vec2<f32>, a: f32) -> vec2<f32> {
-    let c = cos(a);
-    let s = sin(a);
-
-    return vec2<f32>(
-        c * v.x - s * v.y,
-        s * v.x + c * v.y
-    );
-}
-
-fn segment_intersects_occluder_2d_hard_sample(
-    light_pos: vec2<f32>,
-    light_z: f32,
-    frag_pos: vec2<f32>,
-    l: Light2D,
-    occ: Occluder2D
-) -> f32 {
-    let eps = 1e-4;
-
-    let dir = frag_pos - light_pos;
-    let seg_len = length(dir);
-
-    if (seg_len <= eps) {
-        return 0.0;
-    }
-
-    let dir_n = dir / seg_len;
-
-    let rel_o = light_pos - occ.center.xy;
-
-    let o_local = vec2<f32>(
-        dot(rel_o, occ.axis_x.xy),
-        dot(rel_o, occ.axis_y.xy)
-    );
-
-    let d_local = vec2<f32>(
-        dot(dir_n, occ.axis_x.xy),
-        dot(dir_n, occ.axis_y.xy)
-    );
-
-    let half_ext = max(occ.extents_height.xy, vec2<f32>(1e-5));
-
-    var t_min = 0.0;
-    var t_max = seg_len;
-    var valid = true;
-
-    for (var axis: u32 = 0u; axis < 2u; axis = axis + 1u) {
-        let o = select(o_local.x, o_local.y, axis == 1u);
-        let d = select(d_local.x, d_local.y, axis == 1u);
-        let slab = select(half_ext.x, half_ext.y, axis == 1u);
-
-        if (abs(d) <= 1e-6) {
-            if (o < -slab || o > slab) {
-                valid = false;
-            }
-
-            continue;
-        }
-
-        let t1 = (-slab - o) / d;
-        let t2 = ( slab - o) / d;
-
-        let near_t = min(t1, t2);
-        let far_t = max(t1, t2);
-
-        t_min = max(t_min, near_t);
-        t_max = min(t_max, far_t);
-
-        if (t_min > t_max) {
-            valid = false;
-        }
-    }
-
-    if (!valid) {
-        return 0.0;
-    }
-
-    let dist_to_caster = max(t_min, 0.0);
-    let exit_t = min(t_max, seg_len);
-
-    if (dist_to_caster > exit_t) {
-        return 0.0;
-    }
-
-    let caster_h = occ.extents_height.z;
-
-    if (caster_h <= eps) {
-        return 0.0;
-    }
-
-    let projected_len =
-        dist_to_caster * caster_h / max(light_z - caster_h, eps);
-
-    if (projected_len <= eps) {
-        return 0.0;
-    }
-
-    let shadow_depth = seg_len - dist_to_caster;
-
-    if (shadow_depth <= 0.0) {
-        return 0.0;
-    }
-
-    let remaining = projected_len - shadow_depth;
-
-    if (remaining <= 0.0) {
-        return 0.0;
-    }
-
-    let end_softness = max(
-        projected_len * max(l.shadow_softness_penumbra.y, 0.0),
-        eps
-    );
-
-    return smoothstep(0.0, end_softness, remaining);
-}
-
-fn segment_intersects_occluder_2d(
-    light_pos: vec2<f32>,
-    light_z: f32,
-    frag_pos: vec2<f32>,
-    l: Light2D,
-    occ: Occluder2D
-) -> f32 {
-    let source_radius = max(l.shadow_softness_penumbra.x, 0.0);
-
-    if (source_radius <= 1e-5) {
-        return segment_intersects_occluder_2d_hard_sample(
-            light_pos,
-            light_z,
-            frag_pos,
-            l,
-            occ
-        );
-    }
-
-    let poisson = array<vec2<f32>, 8>(
-        vec2<f32>(-0.326212, -0.405810),
-        vec2<f32>(-0.840144, -0.073580),
-        vec2<f32>(-0.203345,  0.620716),
-        vec2<f32>( 0.962340, -0.194983),
-        vec2<f32>( 0.473434, -0.480026),
-        vec2<f32>( 0.519456,  0.767022),
-        vec2<f32>( 0.185461, -0.893124),
-        vec2<f32>( 0.142369,  0.268999)
-    );
-
-    let angle = hash12(frag_pos * 23.17) * 6.28318530718;
-
-    var shadow = 0.0;
-
-    for (var i: u32 = 0u; i < 8u; i = i + 1u) {
-        let offset = rotate2(poisson[i], angle) * source_radius;
-
-        shadow = shadow + segment_intersects_occluder_2d_hard_sample(
-            light_pos + offset,
-            light_z,
-            frag_pos,
-            l,
-            occ
-        );
-    }
-
-    return clamp(shadow / 8.0, 0.0, 1.0);
-}
-
-fn sample_occluder_visibility(l: Light2D, world_pos: vec3<f32>) -> f32 {
-    if ((l.kind_flags.y & 1u) == 0u) {
-        return 1.0;
-    }
-    let light_pos = l.position.xy;
-    let frag_pos = world_pos.xy;
-    let occluder_count = min(camera.light_offset_count.w, 256u);
-    let receiver_mask = camera.light_offset_count.z;
-    var blocked = 0.0;
-    for (var i: u32 = 0u; i < occluder_count; i = i + 1u) {
-        let occ = occluders_2d[i];
-        if ((occ.shadow_layer_mask & receiver_mask) == 0u) {
-            continue;
-        }
-        blocked = max(blocked, segment_intersects_occluder_2d(light_pos, max(l.position.z, 1e-4), frag_pos, l, occ));
-        if (blocked > 0.5) {
-            break;
-        }
-    }
-    return 1.0 - blocked;
+fn sample_shadow_blocker_2d(layer: i32, shadow_res: f32, shadow_res_i: i32, angular_x: f32) -> f32 {
+    let wrapped = angular_x - floor(angular_x / shadow_res) * shadow_res;
+    let x0 = i32(floor(wrapped)) % shadow_res_i;
+    let frac_x = fract(wrapped);
+    let xp1 = (x0 + 1) % shadow_res_i;
+    let b0 = textureLoad(shadow_mask_2d, vec2<i32>(x0, 0), layer, 0).r;
+    let bp1 = textureLoad(shadow_mask_2d, vec2<i32>(xp1, 0), layer, 0).r;
+    return mix(b0, bp1, frac_x);
 }
 
 fn apply_2d_lighting(base_color: vec4<f32>, world_pos: vec3<f32>) -> vec4<f32> {
     var lit = vec3<f32>(camera.shadow_params.z, camera.shadow_params.z, camera.shadow_params.z);
+    var max_shadow_occlusion = 0.0;
+    let receives_shadow = camera.shadow_params.y > 0.5;
+    let debug_mode = i32(camera.shadow_controls.w);
     let light_count = min(camera.light_offset_count.y, 64u);
     for (var i: u32 = 0u; i < light_count; i = i + 1u) {
+        let debug_light_index = i32(camera.shadow_controls.z);
+        if (debug_light_index >= 0 && i32(i) != debug_light_index) {
+            continue;
+        }
         let l = lights_2d[camera.light_offset_count.x + i];
         if ((l.shadow_layer_mask & camera.light_offset_count.z) == 0u) {
             continue;
         }
-        let to_light = l.position.xy - world_pos.xy;
-        let dist = length(to_light);
+        let from_light = world_pos.xy - l.position.xy;
+        let dist = length(from_light);
         let range = max(l.intensity_range.y, 0.0001);
+        let dist_ratio = clamp(dist / range, 0.0, 1.0);
+        let angle = atan2(from_light.y, from_light.x);
+        let tau = 6.28318530718;
+        let angular_u = fract((angle / tau) + 1.0);
+        let shadow_res = max(camera.shadow_params.w, 1.0);
+        let layer = i32(l.shadow_index);
+        let shadow_res_i = i32(shadow_res);
+        let angular_x = angular_u * shadow_res;
+        let blocker = sample_shadow_blocker_2d(layer, shadow_res, shadow_res_i, angular_x);
+        let base_softness = max(l.shadow_softness, 0.0);
+        let blocker_safe = max(blocker, 0.0001);
+        let angular_texel = 1.0 / shadow_res;
+        let receiver_behind_blocker = dist_ratio - blocker_safe;
+        var shadow_visibility = 1.0;
+        let contact_offset = max(camera.shadow_controls.x, 0.0);
+        if (receiver_behind_blocker > 0.0) {
+            let blocker_world = blocker_safe * range;
+            let receiver_world = dist;
+            let travel_world = max(receiver_world - blocker_world, 0.0);
+            let source_radius = max(l.light_radius, 0.0001);
+            let penumbra_world = source_radius * travel_world / max(blocker_world, 0.0001);
+            let penumbra_angle = atan2(penumbra_world, max(receiver_world, 0.0001));
+            let cone_texels = (penumbra_angle / tau) * shadow_res;
+            let filter_texels = max(cone_texels, base_softness * 0.75);
+            if (filter_texels <= 1.0) {
+                shadow_visibility = select(0.0, 1.0, dist_ratio <= blocker_safe + contact_offset);
+            } else {
+                let taps = 7;
+                let half_taps = 3.0;
+                var visibility_accum = 0.0;
+                for (var tap = 0; tap < taps; tap = tap + 1) {
+                    let centered = f32(tap) - half_taps;
+                    let sample_x = angular_x + centered * (filter_texels / half_taps);
+                    let sample_blocker =
+                        sample_shadow_blocker_2d(layer, shadow_res, shadow_res_i, sample_x);
+                    visibility_accum += select(
+                        0.0,
+                        1.0,
+                        dist_ratio <= sample_blocker + contact_offset
+                    );
+                }
+                shadow_visibility = pow(clamp(visibility_accum / f32(taps), 0.0, 1.0), 1.1);
+            }
+        }
+        let visibility = select(1.0, shadow_visibility, receives_shadow);
+        max_shadow_occlusion = max(max_shadow_occlusion, 1.0 - visibility);
         let t = clamp(1.0 - (dist / range), 0.0, 1.0);
         let attenuation = t * t * (3.0 - 2.0 * t);
-        let receives_shadow = camera.shadow_params.y > 0.5;
-        let occluder_visibility = sample_occluder_visibility(l, world_pos);
-        let visibility = select(1.0, occluder_visibility, receives_shadow);
         lit += l.color.rgb * attenuation * l.intensity_range.x * visibility;
+    }
+    if (receives_shadow) {
+        // Preserve readable shadow silhouettes even with strong opposing lights.
+        lit *= (1.0 - max_shadow_occlusion * 0.35);
+    }
+    if (debug_mode == 1) {
+        return vec4<f32>(vec3<f32>(max_shadow_occlusion), 1.0);
     }
     return vec4<f32>(base_color.rgb * lit * camera.shadow_params.x, base_color.a);
 }
@@ -1360,5 +1231,6 @@ fn fragment(input: FragmentInput) -> FragmentOutput {
         assert!(compiled.source.contains("fn sample_material("));
         assert!(compiled.source.contains("@vertex"));
         assert!(compiled.source.contains("@fragment"));
+        assert!(compiled.source.contains("let angular_x = angular_u * shadow_res;"));
     }
 }

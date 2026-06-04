@@ -83,6 +83,21 @@ export interface CmdShape2dDisposeArgs {
   shapeId: number;
 }
 
+export interface CmdRealm2dShadowConfigUpdateArgs {
+  realmId: number;
+  softness?: number;
+  shadowContactOffset?: number;
+  shadowBackGradientStrength?: number;
+  shadowDebugLightIndex?: number;
+  shadowDebugMode?: number;
+  ambient?: number;
+  lightRadius?: number;
+  qualityPreset?: 'performance' | 'balanced' | 'quality';
+  maxShadowUpdatesPerFrame?: number;
+  angularResolution?: number;
+  mapResolution?: number;
+}
+
 export interface CmdResultTwoDUpsert {
   success: boolean;
   message: string;

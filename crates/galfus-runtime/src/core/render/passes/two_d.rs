@@ -3,6 +3,8 @@ use crate::core::render::cache::PipelineKey;
 use crate::core::render::state::{
     TwoDBatchKey, TwoDBatchRange, TwoDItemKind, TwoDPreparedCamera, TwoDPreparedItem,
 };
+use std::hash::{Hash, Hasher};
+use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -13,6 +15,7 @@ struct TwoDCameraRaw {
     model_position: glam::Vec4,
     light_offset_count: glam::UVec4,
     shadow_params: glam::Vec4,
+    shadow_controls: glam::Vec4,
 }
 
 #[repr(C)]
@@ -30,10 +33,14 @@ struct TwoDLightRaw {
     position: glam::Vec4,
     color: glam::Vec4,
     intensity_range: glam::Vec2,
-    shadow_softness_penumbra: glam::Vec2,
+    shadow_softness: f32,
+    _padding_softness: f32,
+    light_radius: f32,
+    _padding0: u32,
     kind_flags: glam::UVec2,
     shadow_layer_mask: u32,
-    _padding: [u32; 1],
+    shadow_index: u32,
+    _padding1: glam::UVec2,
 }
 
 #[repr(C)]
@@ -49,6 +56,59 @@ struct TwoDOccluderRaw {
 
 const TWO_D_MAX_LIGHTS_PER_CAMERA: usize = 64;
 const TWO_D_MAX_OCCLUDERS_PER_CAMERA: usize = 256;
+const TWO_D_SHADOW_MASK_SIZE: u32 = 256;
+const SHADOW2D_ANGULAR_COMPUTE_WGSL: &str = r#"
+struct Segment {
+  a: vec2<f32>,
+  b: vec2<f32>,
+}
+
+struct Params {
+  light_pos: vec2<f32>,
+  light_range: f32,
+  segment_count: u32,
+  layer: u32,
+  angular_resolution: u32,
+}
+
+@group(0) @binding(0) var<storage, read> segments: array<Segment>;
+@group(0) @binding(1) var<uniform> params: Params;
+@group(0) @binding(2) var angular_out: texture_storage_2d_array<r32float, write>;
+
+fn cross2(a: vec2<f32>, b: vec2<f32>) -> f32 {
+  return a.x * b.y - a.y * b.x;
+}
+
+@compute @workgroup_size(64)
+fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = gid.x;
+  if (x >= params.angular_resolution) {
+    return;
+  }
+  let u = (f32(x) + 0.5) / f32(max(params.angular_resolution, 1u));
+  let angle = u * 6.28318530718;
+  let ray_dir = vec2<f32>(cos(angle), sin(angle));
+  var min_t = params.light_range;
+
+  for (var i: u32 = 0u; i < params.segment_count; i = i + 1u) {
+    let s = segments[i];
+    let v1 = params.light_pos - s.a;
+    let v2 = s.b - s.a;
+    let den = cross2(ray_dir, v2);
+    if (abs(den) <= 1e-6) {
+      continue;
+    }
+    let t = cross2(v2, v1) / den;
+    let q = cross2(ray_dir, v1) / den;
+    if (t >= 0.0 && q >= 0.0 && q <= 1.0 && t < min_t) {
+      min_t = t;
+    }
+  }
+
+  let blocker = clamp(min_t / max(params.light_range, 1e-4), 0.0, 1.0);
+  textureStore(angular_out, vec2<i32>(i32(x), 0), i32(params.layer), vec4<f32>(blocker, 0.0, 0.0, 1.0));
+}
+"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TwoDDrawBatch {
@@ -130,6 +190,11 @@ fn collect_visible_2d_lights(
     let camera_position = camera.transform.w_axis.truncate();
     let mut light_ids: Vec<u32> = render_state.scene.lights.keys().copied().collect();
     light_ids.sort_unstable();
+    let radius_mul = match shadow_config.quality_preset {
+        crate::core::resources::Realm2dShadowQualityPreset::Performance => 0.9,
+        crate::core::resources::Realm2dShadowQualityPreset::Balanced => 1.0,
+        crate::core::resources::Realm2dShadowQualityPreset::Quality => 1.2,
+    };
     for light_id in light_ids {
         let Some(light) = render_state.scene.lights.get(&light_id) else {
             continue;
@@ -151,21 +216,36 @@ fn collect_visible_2d_lights(
             position: light.data.position,
             color: light.data.color,
             intensity_range: light.data.intensity_range,
-            shadow_softness_penumbra: glam::Vec2::new(
-                light.shadow_softness.unwrap_or(shadow_config.softness),
-                light
-                    .shadow_penumbra_length_scale
-                    .unwrap_or(shadow_config.penumbra_length_scale),
-            ),
+            shadow_softness: light.shadow_softness.unwrap_or(shadow_config.softness),
+            _padding_softness: 0.0,
+            light_radius: shadow_config.light_radius * radius_mul,
+            _padding0: 0,
             kind_flags: light.data.kind_flags,
             shadow_layer_mask: light.shadow_layer_mask,
-            _padding: [0; 1],
+            shadow_index: 0,
+            _padding1: glam::UVec2::ZERO,
         });
         if visible_lights.len() >= TWO_D_MAX_LIGHTS_PER_CAMERA {
             break;
         }
     }
     visible_lights
+}
+
+fn quality_preset_runtime_overrides(
+    cfg: crate::core::resources::Realm2dShadowConfig,
+) -> u32 {
+    match cfg.quality_preset {
+        crate::core::resources::Realm2dShadowQualityPreset::Performance => {
+            cfg.angular_resolution.clamp(128, 1024)
+        }
+        crate::core::resources::Realm2dShadowQualityPreset::Balanced => {
+            cfg.angular_resolution.clamp(256, 2048)
+        }
+        crate::core::resources::Realm2dShadowQualityPreset::Quality => {
+            cfg.angular_resolution.clamp(512, 4096).max(4096)
+        }
+    }
 }
 
 fn collect_shadow_occluders(
@@ -210,17 +290,211 @@ fn collect_shadow_occluders(
     occluders
 }
 
+fn occluder_edges(occ: &TwoDOccluderRaw) -> [(glam::Vec2, glam::Vec2); 4] {
+    let c = glam::Vec2::new(occ.center.x, occ.center.y);
+    let ax = glam::Vec2::new(occ.axis_x.x, occ.axis_x.y) * occ.extents_height.x.max(1e-5);
+    let ay = glam::Vec2::new(occ.axis_y.x, occ.axis_y.y) * occ.extents_height.y.max(1e-5);
+    let p0 = c - ax - ay;
+    let p1 = c + ax - ay;
+    let p2 = c + ax + ay;
+    let p3 = c - ax + ay;
+    [(p0, p1), (p1, p2), (p2, p3), (p3, p0)]
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Shadow2dSegmentRaw {
+    a: glam::Vec2,
+    b: glam::Vec2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Shadow2dAngularParamsRaw {
+    light_pos: glam::Vec2,
+    light_range: f32,
+    segment_count: u32,
+    layer: u32,
+    angular_resolution: u32,
+    _padding: glam::UVec2,
+}
+
+fn dispatch_shadow_angular_compute(
+    resources: &mut crate::core::render::state::TwoDPassResources,
+    device: &wgpu::Device,
+    _queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    angular_resolution: u32,
+    layer: u32,
+    light: &TwoDLightRaw,
+    occluders: &[&TwoDOccluderRaw],
+) {
+    let mut segments = Vec::with_capacity(occluders.len() * 4);
+    for occ in occluders {
+        for (a, b) in occluder_edges(occ) {
+            segments.push(Shadow2dSegmentRaw { a, b });
+        }
+    }
+    let segment_bytes = bytemuck::cast_slice(&segments);
+    let segment_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("2D Shadow Angular Segment Buffer"),
+        contents: if segment_bytes.is_empty() {
+            bytemuck::cast_slice(&[Shadow2dSegmentRaw {
+                a: glam::Vec2::ZERO,
+                b: glam::Vec2::ZERO,
+            }])
+        } else {
+            segment_bytes
+        },
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let params = Shadow2dAngularParamsRaw {
+        light_pos: glam::Vec2::new(light.position.x, light.position.y),
+        light_range: light.intensity_range.y.max(0.0001),
+        segment_count: segments.len() as u32,
+        layer,
+        angular_resolution: angular_resolution.max(1),
+        _padding: glam::UVec2::ZERO,
+    };
+    let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("2D Shadow Angular Params Buffer"),
+        contents: bytemuck::bytes_of(&params),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("2D Shadow Angular Compute BG"),
+        layout: &resources.shadow_compute_bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: segment_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: params_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&resources.shadow_mask_view),
+            },
+        ],
+    });
+    let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("2D Shadow Angular Compute Pass"),
+        timestamp_writes: None,
+    });
+    cpass.set_pipeline(&resources.shadow_compute_pipeline);
+    cpass.set_bind_group(0, &bind_group, &[]);
+    cpass.dispatch_workgroups(angular_resolution.max(1).div_ceil(64), 1, 1);
+}
+
+fn clear_shadow_mask_texture_white(
+    queue: &wgpu::Queue,
+    shadow_mask_texture: &wgpu::Texture,
+    shadow_mask_size: glam::UVec2,
+) {
+    let layer_count = TWO_D_MAX_LIGHTS_PER_CAMERA as u32;
+    let data = vec![1.0_f32; (shadow_mask_size.x * layer_count) as usize];
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: shadow_mask_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytemuck::cast_slice(&data),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(shadow_mask_size.x * std::mem::size_of::<f32>() as u32),
+            rows_per_image: Some(1),
+        },
+        wgpu::Extent3d {
+            width: shadow_mask_size.x,
+            height: 1,
+            depth_or_array_layers: layer_count,
+        },
+    );
+}
+
+fn hash_2d_shadow_scene(
+    render_state: &RenderState,
+    cameras: &[crate::core::render::state::TwoDPreparedCamera],
+    target_size: glam::UVec2,
+) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    target_size.x.hash(&mut hasher);
+    target_size.y.hash(&mut hasher);
+    let shadow_cfg = render_state.two_d_source.shadow_config;
+    shadow_cfg.softness.to_bits().hash(&mut hasher);
+    shadow_cfg.shadow_contact_offset.to_bits().hash(&mut hasher);
+    shadow_cfg.shadow_back_gradient_strength.to_bits().hash(&mut hasher);
+    shadow_cfg.shadow_debug_light_index.hash(&mut hasher);
+    shadow_cfg.shadow_debug_mode.hash(&mut hasher);
+    shadow_cfg.ambient.to_bits().hash(&mut hasher);
+    shadow_cfg.light_radius.to_bits().hash(&mut hasher);
+    (shadow_cfg.quality_preset as u32).hash(&mut hasher);
+    shadow_cfg.max_shadow_updates_per_frame.hash(&mut hasher);
+    shadow_cfg.angular_resolution.hash(&mut hasher);
+    shadow_cfg.map_resolution.hash(&mut hasher);
+    cameras.len().hash(&mut hasher);
+
+    for camera in cameras {
+        camera.camera_id.hash(&mut hasher);
+        bytemuck::bytes_of(&camera.transform).hash(&mut hasher);
+        bytemuck::bytes_of(&camera.near_far).hash(&mut hasher);
+        camera.ortho_scale.to_bits().hash(&mut hasher);
+        camera.layer_mask.hash(&mut hasher);
+        camera.order.hash(&mut hasher);
+
+        let visible_lights = collect_visible_2d_lights(render_state, camera, shadow_cfg);
+        visible_lights.len().hash(&mut hasher);
+        for light in &visible_lights {
+            bytemuck::bytes_of(light).hash(&mut hasher);
+        }
+
+        let occluders = collect_shadow_occluders(render_state, camera);
+        occluders.len().hash(&mut hasher);
+        for occluder in &occluders {
+            bytemuck::bytes_of(occluder).hash(&mut hasher);
+        }
+    }
+
+    hasher.finish()
+}
+
+fn hash_2d_shadow_light_layer(
+    camera_vp: glam::Mat4,
+    light: &TwoDLightRaw,
+    occluders: &[TwoDOccluderRaw],
+    shadow_mask_size: glam::UVec2,
+) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytemuck::bytes_of(&camera_vp).hash(&mut hasher);
+    bytemuck::bytes_of(light).hash(&mut hasher);
+    shadow_mask_size.x.hash(&mut hasher);
+    shadow_mask_size.y.hash(&mut hasher);
+    occluders.len().hash(&mut hasher);
+    for occluder in occluders {
+        bytemuck::bytes_of(occluder).hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 fn ensure_two_d_pass_resources(
     render_state: &mut RenderState,
     device: &wgpu::Device,
-    _queue: &wgpu::Queue,
+    queue: &wgpu::Queue,
     required_slots: usize,
 ) {
+    let desired_shadow_resolution = render_state
+        .shadow_2d
+        .as_ref()
+        .map(|manager| manager.config.angular_resolution.clamp(128, 4096))
+        .unwrap_or(TWO_D_SHADOW_MASK_SIZE);
     let min_alignment = device.limits().min_uniform_buffer_offset_alignment as u64;
     let stride = align_up(std::mem::size_of::<TwoDCameraRaw>() as u64, min_alignment);
     let initial_slots = required_slots.max(1);
     let initial_light_slots = TWO_D_MAX_LIGHTS_PER_CAMERA.max(1);
-    let initial_occluder_slots = TWO_D_MAX_OCCLUDERS_PER_CAMERA.max(1);
     let resources = render_state.two_d_pass_resources.get_or_insert_with(|| {
         let global_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -277,10 +551,10 @@ fn ensure_two_d_pass_resources(
                     wgpu::BindGroupLayoutEntry {
                         binding: 6,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
                         },
                         count: None,
                     },
@@ -308,12 +582,105 @@ fn ensure_two_d_pass_resources(
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let occluder_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("2D Occluder Storage Buffer"),
-            size: (std::mem::size_of::<TwoDOccluderRaw>() * initial_occluder_slots) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+        let fallback_depth = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("2D Fallback Depth Texture"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
         });
+        let fallback_depth_view =
+            fallback_depth.create_view(&wgpu::TextureViewDescriptor::default());
+        let shadow_mask_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("2D Shadow Mask Texture"),
+            size: wgpu::Extent3d {
+                width: desired_shadow_resolution,
+                height: 1,
+                depth_or_array_layers: TWO_D_MAX_LIGHTS_PER_CAMERA as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let shadow_mask_view = shadow_mask_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            base_array_layer: 0,
+            array_layer_count: Some(TWO_D_MAX_LIGHTS_PER_CAMERA as u32),
+            ..Default::default()
+        });
+        let shadow_compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("2D Shadow Angular Compute BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::R32Float,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let shadow_compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("2D Shadow Angular Compute Layout"),
+                bind_group_layouts: &[&shadow_compute_bind_group_layout],
+                ..Default::default()
+            });
+        let shadow_compute_shader_module =
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("2D Shadow Angular Compute Shader"),
+                source: wgpu::ShaderSource::Wgsl(SHADOW2D_ANGULAR_COMPUTE_WGSL.into()),
+            });
+        let shadow_compute_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("2D Shadow Angular Compute Pipeline"),
+                layout: Some(&shadow_compute_pipeline_layout),
+                module: &shadow_compute_shader_module,
+                entry_point: Some("cs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+        clear_shadow_mask_texture_white(
+            queue,
+            &shadow_mask_texture,
+            glam::UVec2::new(desired_shadow_resolution, 1),
+        );
         let global_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("2D Global BG"),
@@ -351,40 +718,101 @@ fn ensure_two_d_pass_resources(
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: occluder_storage_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&shadow_mask_view),
                     },
                 ],
             });
-        let fallback_depth = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("2D Fallback Depth Texture"),
-            size: wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let fallback_depth_view =
-            fallback_depth.create_view(&wgpu::TextureViewDescriptor::default());
         crate::core::render::state::TwoDPassResources {
             global_bind_group_layout,
             pipeline_layout,
             camera_dynamic_buffer,
             light_storage_buffer,
-            occluder_storage_buffer,
             global_bind_group,
             camera_dynamic_stride: stride,
             camera_dynamic_capacity_slots: initial_slots,
             light_capacity_slots: initial_light_slots,
-            occluder_capacity_slots: initial_occluder_slots,
             fallback_depth_view,
+            shadow_mask_texture,
+            shadow_mask_view,
+            shadow_mask_size: glam::UVec2::new(desired_shadow_resolution, 1),
+            shadow_compute_bind_group_layout,
+            shadow_compute_pipeline,
         }
     });
+    if resources.shadow_mask_size.x != desired_shadow_resolution
+        || resources.shadow_mask_size.y != 1
+    {
+        let shadow_mask_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("2D Shadow Mask Texture"),
+            size: wgpu::Extent3d {
+                width: desired_shadow_resolution,
+                height: 1,
+                depth_or_array_layers: TWO_D_MAX_LIGHTS_PER_CAMERA as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let shadow_mask_view = shadow_mask_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            base_array_layer: 0,
+            array_layer_count: Some(TWO_D_MAX_LIGHTS_PER_CAMERA as u32),
+            ..Default::default()
+        });
+        clear_shadow_mask_texture_white(
+            queue,
+            &shadow_mask_texture,
+            glam::UVec2::new(desired_shadow_resolution, 1),
+        );
+        let library = render_state.library.as_ref().expect("library must exist");
+        let new_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("2D Global BG"),
+            layout: &resources.global_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &resources.camera_dynamic_buffer,
+                        offset: 0,
+                        size: std::num::NonZeroU64::new(std::mem::size_of::<TwoDCameraRaw>() as u64),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&library.samplers.point_clamp),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&library.samplers.linear_clamp),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&library.samplers.point_repeat),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&library.samplers.linear_repeat),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: resources.light_storage_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&shadow_mask_view),
+                },
+            ],
+        });
+        resources.shadow_mask_texture = shadow_mask_texture;
+        resources.shadow_mask_view = shadow_mask_view;
+        resources.shadow_mask_size = glam::UVec2::new(desired_shadow_resolution, 1);
+        resources.global_bind_group = new_bind_group;
+    }
     if resources.camera_dynamic_capacity_slots < required_slots {
         let mut new_camera_slots = resources.camera_dynamic_capacity_slots.max(1);
         while new_camera_slots < required_slots {
@@ -400,13 +828,6 @@ fn ensure_two_d_pass_resources(
             label: Some("2D Light Storage Buffer"),
             size: (std::mem::size_of::<TwoDLightRaw>() * resources.light_capacity_slots.max(1))
                 as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let new_occluder_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("2D Occluder Storage Buffer"),
-            size: (std::mem::size_of::<TwoDOccluderRaw>()
-                * resources.occluder_capacity_slots.max(1)) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -448,13 +869,12 @@ fn ensure_two_d_pass_resources(
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: new_occluder_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&resources.shadow_mask_view),
                     },
                 ],
             });
         resources.camera_dynamic_buffer = new_camera_buffer;
         resources.light_storage_buffer = new_light_buffer;
-        resources.occluder_storage_buffer = new_occluder_buffer;
         resources.global_bind_group = new_bind_group;
         resources.camera_dynamic_capacity_slots = new_camera_slots;
     }
@@ -619,10 +1039,10 @@ pub fn pass_2d_draw(
         pipeline_layout,
         camera_dynamic_buffer,
         light_storage_buffer,
-        occluder_storage_buffer,
         global_bind_group,
         camera_dynamic_stride,
         fallback_depth_view,
+        shadow_mask_size,
     ) = {
         let resources = render_state
             .two_d_pass_resources
@@ -632,10 +1052,10 @@ pub fn pass_2d_draw(
             resources.pipeline_layout.clone(),
             resources.camera_dynamic_buffer.clone(),
             resources.light_storage_buffer.clone(),
-            resources.occluder_storage_buffer.clone(),
             resources.global_bind_group.clone(),
             resources.camera_dynamic_stride,
             resources.fallback_depth_view.clone(),
+            resources.shadow_mask_size,
         )
     };
     let library = render_state.library.as_ref().expect("library must exist");
@@ -732,10 +1152,6 @@ pub fn pass_2d_draw(
             )
         })
         .collect();
-    let camera_shadow_occluders: Vec<Vec<TwoDOccluderRaw>> = cameras
-        .iter()
-        .map(|camera| collect_shadow_occluders(render_state, camera))
-        .collect();
 
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("2D Draw Pass"),
@@ -762,20 +1178,15 @@ pub fn pass_2d_draw(
         let mut camera_slot_index: usize = 0;
         for (camera_index, camera) in cameras.iter().enumerate() {
             let camera_vp = build_2d_view_projection(Some(camera), target_size);
-            let visible_lights = &camera_visible_lights[camera_index];
-            let shadow_occluders = &camera_shadow_occluders[camera_index];
+            let mut visible_lights = camera_visible_lights[camera_index].clone();
+            for (light_idx, light) in visible_lights.iter_mut().enumerate() {
+                light.shadow_index = light_idx as u32;
+            }
             if !visible_lights.is_empty() {
                 queue.write_buffer(
                     &light_storage_buffer,
                     0,
-                    bytemuck::cast_slice(visible_lights),
-                );
-            }
-            if !shadow_occluders.is_empty() {
-                queue.write_buffer(
-                    &occluder_storage_buffer,
-                    0,
-                    bytemuck::cast_slice(shadow_occluders),
+                    bytemuck::cast_slice(&visible_lights),
                 );
             }
             // Reserve one slot per camera to keep deterministic offset mapping and sizing.
@@ -1037,13 +1448,22 @@ pub fn pass_2d_draw(
                             0,
                             visible_lights.len() as u32,
                             item.shadow_layer_mask,
-                            shadow_occluders.len() as u32,
+                            0,
                         ),
                         shadow_params: glam::Vec4::new(
                             1.0,
                             if item.receive_shadow { 1.0 } else { 0.0 },
                             render_state.two_d_source.shadow_config.ambient,
-                            0.0,
+                            shadow_mask_size.x.max(1) as f32,
+                        ),
+                        shadow_controls: glam::Vec4::new(
+                            render_state.two_d_source.shadow_config.shadow_contact_offset,
+                            render_state
+                                .two_d_source
+                                .shadow_config
+                                .shadow_back_gradient_strength,
+                            render_state.two_d_source.shadow_config.shadow_debug_light_index as f32,
+                            render_state.two_d_source.shadow_config.shadow_debug_mode as f32,
                         ),
                     };
                     let offset = (camera_slot_index as u64) * camera_dynamic_stride;
@@ -1071,6 +1491,114 @@ pub fn pass_2d_draw(
             );
             pass.insert_debug_marker(&marker);
         }
+    }
+}
+
+pub(crate) fn pass_2d_shadow_masks_update(
+    render_state: &mut RenderState,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    _frame_index: u64,
+    target_size: glam::UVec2,
+) {
+    if let Some(shadow_manager) = render_state.shadow_2d.as_mut() {
+        let requested = quality_preset_runtime_overrides(render_state.two_d_source.shadow_config);
+        if shadow_manager.config.angular_resolution != requested {
+            shadow_manager.config.angular_resolution = requested;
+            shadow_manager.mark_dirty();
+        }
+    }
+    let cameras = if render_state.two_d_prepared.cameras.is_empty() {
+        vec![crate::core::render::state::TwoDPreparedCamera {
+            camera_id: 0,
+            transform: glam::Mat4::IDENTITY,
+            near_far: glam::Vec2::new(0.0, 1.0),
+            ortho_scale: 1.0,
+            layer_mask: u32::MAX,
+            order: 0,
+        }]
+    } else {
+        render_state.two_d_prepared.cameras.clone()
+    };
+    let scene_hash = hash_2d_shadow_scene(render_state, &cameras, target_size);
+    let required_slots = (cameras.len() * (1 + render_state.two_d_batched.items.len())).max(1);
+    ensure_two_d_pass_resources(render_state, device, queue, required_slots);
+    let shadow_mask_size = {
+        let resources = render_state
+            .two_d_pass_resources
+            .as_ref()
+            .expect("2D pass resources must be initialized");
+        resources.shadow_mask_size
+    };
+    let previous_camera_hashes = render_state
+        .shadow_2d
+        .as_ref()
+        .map(|m| m.camera_light_hashes.clone())
+        .unwrap_or_default();
+    let mut camera_light_hash_updates: Vec<(u32, Vec<u64>)> = Vec::new();
+    let mut updates_this_frame = 0_u32;
+    let mut update_cursor = render_state
+        .shadow_2d
+        .as_ref()
+        .map(|m| m.update_cursor)
+        .unwrap_or(0);
+    for camera in &cameras {
+        let camera_vp = build_2d_view_projection(Some(camera), target_size);
+        let mut visible_lights = collect_visible_2d_lights(
+            render_state,
+            camera,
+            render_state.two_d_source.shadow_config,
+        );
+        for (light_idx, light) in visible_lights.iter_mut().enumerate() {
+            light.shadow_index = light_idx as u32;
+        }
+        let shadow_occluders = collect_shadow_occluders(render_state, camera);
+        let mut camera_light_hashes = previous_camera_hashes
+            .get(&camera.camera_id)
+            .cloned()
+            .unwrap_or_else(|| vec![0_u64; visible_lights.len()]);
+        camera_light_hashes.resize(visible_lights.len(), 0);
+        if visible_lights.is_empty() {
+            camera_light_hash_updates.push((camera.camera_id, camera_light_hashes));
+            continue;
+        }
+        let light_count = visible_lights.len();
+        let start_idx = update_cursor % light_count;
+        update_cursor = update_cursor.saturating_add(1);
+        for offset in 0..light_count {
+            let light = &visible_lights[(start_idx + offset) % light_count];
+            let layer_hash =
+                hash_2d_shadow_light_layer(camera_vp, light, &shadow_occluders, shadow_mask_size);
+            let relevant_occluders: Vec<&TwoDOccluderRaw> = shadow_occluders
+                .iter()
+                .filter(|occ| (occ.shadow_layer_mask & light.shadow_layer_mask) != 0)
+                .collect();
+            let Some(resources) = render_state.two_d_pass_resources.as_mut() else {
+                continue;
+            };
+            dispatch_shadow_angular_compute(
+                resources,
+                device,
+                queue,
+                encoder,
+                shadow_mask_size.x,
+                light.shadow_index,
+                light,
+                &relevant_occluders,
+            );
+            camera_light_hashes[light.shadow_index as usize] = layer_hash;
+            updates_this_frame = updates_this_frame.saturating_add(1);
+        }
+        camera_light_hash_updates.push((camera.camera_id, camera_light_hashes));
+    }
+    if let Some(shadow_manager) = render_state.shadow_2d.as_mut() {
+        for (camera_id, light_hashes) in camera_light_hash_updates {
+            shadow_manager.set_camera_light_hashes(camera_id, light_hashes);
+        }
+        shadow_manager.last_updated_layers = updates_this_frame;
+        shadow_manager.update_cursor = update_cursor;
+        shadow_manager.mark_updated(scene_hash);
     }
 }
 
@@ -1572,6 +2100,7 @@ mod tests {
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].position, glam::Vec4::new(0.0, 0.0, 0.0, 1.0));
     }
+
 }
 
 pub fn pass_2d_compose(

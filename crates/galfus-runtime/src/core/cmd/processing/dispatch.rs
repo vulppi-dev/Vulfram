@@ -596,11 +596,11 @@ pub(super) fn dispatch_command(
                 response: CommandResponse::EnvironmentDispose(result),
             });
         }
-        EngineCmd::CmdShadowConfigure(args) => {
-            let result = res::shadow::engine_cmd_shadow_configure(engine, &args);
+        EngineCmd::CmdShadow3dConfigure(args) => {
+            let result = res::shadow::engine_cmd_shadow3d_configure(engine, &args);
             engine.runtime.push_response(CommandResponseEnvelope {
                 id: pack.id,
-                response: CommandResponse::ShadowConfigure(result),
+                response: CommandResponse::Shadow3dConfigure(result),
             });
         }
         EngineCmd::CmdRealmCreate(args) => {

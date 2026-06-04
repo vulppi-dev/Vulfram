@@ -12,7 +12,7 @@ This document defines the host-facing contract for `realm2d` in the current runt
 - native 2D forward rendering with:
   - complete material bind/layout semantics
   - native 2D lighting (camera-visible selection + light buffer + per-light shading)
-  - native 2D shadow integration through shadow atlas sampling (`cast_shadow`/`receive_shadow`)
+  - native 2D shadow integration through per-light shadow mask array sampling (`cast_shadow`/`receive_shadow`)
 
 ## 2. Preset vs Custom
 
@@ -86,12 +86,21 @@ Runtime behavior:
 
 - non-casters do not occlude
 - non-receivers are not darkened by shadow factor
-- shadowing is applied in the 2D forward shading path using atlas-backed sampling for point lights with valid shadow pages
+- shadowing is applied in the 2D forward shading path using per-light mask layers generated in the 2D shadow pass
+
+Realm-level shadow tuning command (`cmd-realm2d-shadow-config-update`) supports:
+
+- `softness`
+- `lightRadius`
+- `shadowContactOffset`
+- `ambient`
+- `angularResolution`
+- `mapResolution` (clamped to `64..=2048`)
 
 Current limits:
 
-- directional/spot shadow sampling is not part of the `realm2d` forward shader contract yet
-- runtime quality depends on shadow page availability and configured shadow atlas resolution
+- shadow mask generation runs in the 2D shadow GPU pass
+- runtime quality/performance depends primarily on angular resolution and visible occluder complexity
 
 ## 6. IDs and Reserved Range
 

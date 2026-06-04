@@ -120,7 +120,6 @@ pub(super) fn sync_scene_from_realm_and_universal_resources(
                     layer_mask: record.layer_mask,
                     shadow_layer_mask: record.shadow_layer_mask,
                     shadow_softness: record.shadow_softness,
-                    shadow_penumbra_length_scale: record.shadow_penumbra_length_scale,
                     cast_shadow: record.cast_shadow,
                 };
                 let next_meta = galfus_realm_3d::LightRecordMeta {
@@ -138,7 +137,6 @@ pub(super) fn sync_scene_from_realm_and_universal_resources(
                     layer_mask: node.layer_mask,
                     shadow_layer_mask: node.shadow_layer_mask,
                     shadow_softness: node.shadow_softness,
-                    shadow_penumbra_length_scale: node.shadow_penumbra_length_scale,
                     cast_shadow: node.cast_shadow,
                 };
                 record.label = node.label.clone();
@@ -147,7 +145,6 @@ pub(super) fn sync_scene_from_realm_and_universal_resources(
                 record.layer_mask = node.layer_mask;
                 record.shadow_layer_mask = node.shadow_layer_mask;
                 record.shadow_softness = node.shadow_softness;
-                record.shadow_penumbra_length_scale = node.shadow_penumbra_length_scale;
                 record.cast_shadow = node.cast_shadow;
                 let update_plan =
                     galfus_realm_3d::plan_light_record_update(&current_meta, &next_meta);

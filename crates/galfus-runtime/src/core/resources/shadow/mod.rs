@@ -15,7 +15,7 @@ pub use cmd::*;
 /// Configuration for the Shadow Manager
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
-pub struct ShadowConfig {
+pub struct Shadow3dConfig {
     pub tile_resolution: u32,
     pub atlas_tiles_w: u32,
     pub atlas_tiles_h: u32,
@@ -25,7 +25,7 @@ pub struct ShadowConfig {
     pub normal_bias: f32,
 }
 
-impl Default for ShadowConfig {
+impl Default for Shadow3dConfig {
     fn default() -> Self {
         Self {
             tile_resolution: 2048,
@@ -96,7 +96,7 @@ impl Default for ShadowPageEntry {
 }
 
 /// Manages Virtual Shadow Maps paging and atlas allocation
-pub struct ShadowManager {
+pub struct ShadowManager3d {
     pub atlas: ShadowAtlasSystem,
     pub page_table: StorageBufferPool<ShadowPageEntry>,
     pub point_light_vp: StorageBufferPool<glam::Mat4>,
@@ -107,10 +107,10 @@ pub struct ShadowManager {
     // Virtual to Physical mapping
     pub cache: HashMap<ShadowPageKey, ShadowPageRecord>,
 
-    pub config: ShadowConfig,
+    pub config: Shadow3dConfig,
 }
 
-impl ShadowManager {
+impl ShadowManager3d {
     const MAX_IDLE_FRAMES: u64 = 600;
     fn build_params(&self, point_vp_base: u32) -> ShadowParams {
         ShadowParams {
@@ -133,7 +133,7 @@ impl ShadowManager {
 
     #[cfg(any(not(target_arch = "wasm32"), target_arch = "wasm32"))]
     pub fn new(device: &Device, queue: &Queue, table_capacity: u32) -> Self {
-        let config = ShadowConfig::default();
+        let config = Shadow3dConfig::default();
         let atlas_desc = ShadowAtlasDesc {
             label: Some("Shadow Atlas"),
             format: TextureFormat::Depth32Float,
@@ -181,7 +181,7 @@ impl ShadowManager {
         }
     }
 
-    pub fn configure(&mut self, device: &Device, config: ShadowConfig) {
+    pub fn configure(&mut self, device: &Device, config: Shadow3dConfig) {
         let needs_atlas_rebuild = config.tile_resolution != self.config.tile_resolution
             || config.atlas_tiles_w != self.config.atlas_tiles_w
             || config.atlas_tiles_h != self.config.atlas_tiles_h
@@ -549,7 +549,7 @@ impl ShadowManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{ShadowManager, ShadowPageKey};
+    use super::{ShadowManager3d, ShadowPageKey};
 
     #[test]
     fn compute_table_index_is_linear_and_bounded() {
@@ -560,8 +560,8 @@ mod tests {
             x: 1,
             y: 0,
         };
-        assert_eq!(ShadowManager::compute_table_index(16, 2, key), Some(9));
+        assert_eq!(ShadowManager3d::compute_table_index(16, 2, key), Some(9));
         let overflow = ShadowPageKey { light_id: 2, ..key };
-        assert_eq!(ShadowManager::compute_table_index(16, 2, overflow), None);
+        assert_eq!(ShadowManager3d::compute_table_index(16, 2, overflow), None);
     }
 }

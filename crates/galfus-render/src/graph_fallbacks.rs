@@ -16,17 +16,6 @@ pub fn realm2d_fallback_graph() -> RenderGraphDesc {
         graph_id: LogicalId::Str("ui_fallback".into()),
         nodes: vec![
             RenderGraphNode {
-                node_id: LogicalId::Str("2d_shadow".into()),
-                pass_id: RENDER_PASS_SHADOW_2D.into(),
-                inputs: Vec::new(),
-                outputs: vec![LogicalId::Str("2d_shadow_atlas".into())],
-                require: Vec::new(),
-                priority: 5,
-                enabled: true,
-                params: HashMap::new(),
-                shader: None,
-            },
-            RenderGraphNode {
                 node_id: LogicalId::Str("2d_prepare".into()),
                 pass_id: RENDER_PASS_PREPARE.into(),
                 inputs: Vec::new(),
@@ -49,9 +38,23 @@ pub fn realm2d_fallback_graph() -> RenderGraphDesc {
                 shader: None,
             },
             RenderGraphNode {
+                node_id: LogicalId::Str("2d_shadow".into()),
+                pass_id: RENDER_PASS_SHADOW_2D.into(),
+                inputs: vec![LogicalId::Str("2d_batches".into())],
+                outputs: vec![LogicalId::Str("2d_shadow_atlas".into())],
+                require: Vec::new(),
+                priority: 25,
+                enabled: true,
+                params: HashMap::new(),
+                shader: None,
+            },
+            RenderGraphNode {
                 node_id: LogicalId::Str("2d_draw".into()),
                 pass_id: RENDER_PASS_FORWARD.into(),
-                inputs: vec![LogicalId::Str("2d_batches".into())],
+                inputs: vec![
+                    LogicalId::Str("2d_batches".into()),
+                    LogicalId::Str("2d_shadow_atlas".into()),
+                ],
                 outputs: vec![LogicalId::Str("2d_color".into())],
                 require: Vec::new(),
                 priority: 30,

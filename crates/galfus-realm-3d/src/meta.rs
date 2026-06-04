@@ -73,7 +73,6 @@ pub struct LightRecordMeta {
     pub layer_mask: u32,
     pub shadow_layer_mask: u32,
     pub shadow_softness: Option<f32>,
-    pub shadow_penumbra_length_scale: Option<f32>,
     pub cast_shadow: bool,
 }
 

@@ -638,20 +638,33 @@ pub(super) fn execute_graph_to_view(
                             queue,
                             encoder,
                             frame_index,
+                            target_size,
                         );
                     }
                 }
-                if let Some(shadow) = &mut render_state.shadow {
-                    let realm_tag = match realm_kind {
-                        RealmKind::ThreeD => 0,
-                        RealmKind::TwoD => 1,
-                    };
-                    shadow.sync_table_for_realm(realm_tag);
+                if matches!(realm_kind, RealmKind::ThreeD)
+                    && let Some(shadow) = &mut render_state.shadow_3d
+                {
+                    shadow.sync_table_for_realm(0);
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    *shadow_cpu_ns_accum = shadow_cpu_ns_accum
-                        .saturating_add(shadow_start.elapsed().as_nanos() as u64);
+                    let shadow_ns = shadow_start.elapsed().as_nanos() as u64;
+                    *shadow_cpu_ns_accum = shadow_cpu_ns_accum.saturating_add(shadow_ns);
+                    if matches!(realm_kind, RealmKind::TwoD)
+                        && let Some(shadow2d) = render_state.shadow_2d.as_mut()
+                    {
+                        let shadow_ms = shadow_ns as f32 / 1_000_000.0;
+                        galfus_log::galfus_log_debug!(
+                            log_events,
+                            "render.shadow2d",
+                            "realm={} shadow2d_ms={:.3} updated_layers={} angular_res={} budget=disabled",
+                            _realm_id.0,
+                            shadow_ms as f64,
+                            shadow2d.last_updated_layers,
+                            shadow2d.config.angular_resolution
+                        );
+                    }
                 }
                 #[cfg(target_arch = "wasm32")]
                 {

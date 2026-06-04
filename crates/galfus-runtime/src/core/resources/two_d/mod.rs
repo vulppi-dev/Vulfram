@@ -8,19 +8,43 @@ use crate::core::state::EngineState;
 use crate::core::system::push_error_event;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Realm2dShadowQualityPreset {
+    Performance,
+    Balanced,
+    Quality,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Realm2dShadowConfig {
     pub softness: f32,
-    pub penumbra_length_scale: f32,
+    pub shadow_contact_offset: f32,
+    pub shadow_back_gradient_strength: f32,
+    pub shadow_debug_light_index: i32,
+    pub shadow_debug_mode: i32,
     pub ambient: f32,
+    pub light_radius: f32,
+    pub quality_preset: Realm2dShadowQualityPreset,
+    pub max_shadow_updates_per_frame: u32,
+    pub angular_resolution: u32,
+    pub map_resolution: u32,
 }
 
 impl Default for Realm2dShadowConfig {
     fn default() -> Self {
         Self {
             softness: 0.08,
-            penumbra_length_scale: 0.18,
+            shadow_contact_offset: 0.0,
+            shadow_back_gradient_strength: 0.0,
+            shadow_debug_light_index: -1,
+            shadow_debug_mode: 0,
             ambient: 0.06,
+            light_radius: 0.25,
+            quality_preset: Realm2dShadowQualityPreset::Balanced,
+            max_shadow_updates_per_frame: 16,
+            angular_resolution: 1024,
+            map_resolution: 512,
         }
     }
 }
@@ -29,8 +53,16 @@ impl Realm2dShadowConfig {
     pub fn sanitized(self) -> Self {
         Self {
             softness: self.softness.max(0.0),
-            penumbra_length_scale: self.penumbra_length_scale.max(0.0),
+            shadow_contact_offset: self.shadow_contact_offset.max(0.0),
+            shadow_back_gradient_strength: self.shadow_back_gradient_strength.max(0.0),
+            shadow_debug_light_index: self.shadow_debug_light_index.max(-1),
+            shadow_debug_mode: self.shadow_debug_mode.clamp(0, 1),
             ambient: self.ambient.max(0.0),
+            light_radius: self.light_radius.max(0.01),
+            quality_preset: self.quality_preset,
+            max_shadow_updates_per_frame: self.max_shadow_updates_per_frame.clamp(1, 64),
+            angular_resolution: self.angular_resolution.clamp(128, 4096),
+            map_resolution: self.map_resolution.clamp(64, 2048),
         }
     }
 }
@@ -233,8 +265,16 @@ pub struct CmdShape2dDisposeArgs {
 pub struct CmdRealm2dShadowConfigUpdateArgs {
     pub realm_id: u32,
     pub softness: Option<f32>,
-    pub penumbra_length_scale: Option<f32>,
+    pub shadow_contact_offset: Option<f32>,
+    pub shadow_back_gradient_strength: Option<f32>,
+    pub shadow_debug_light_index: Option<i32>,
+    pub shadow_debug_mode: Option<i32>,
     pub ambient: Option<f32>,
+    pub light_radius: Option<f32>,
+    pub quality_preset: Option<Realm2dShadowQualityPreset>,
+    pub max_shadow_updates_per_frame: Option<u32>,
+    pub angular_resolution: Option<u32>,
+    pub map_resolution: Option<u32>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -884,10 +924,27 @@ pub fn engine_cmd_realm2d_shadow_config_update(
         .unwrap_or_else(default_realm2d_shadow_config);
     let next = Realm2dShadowConfig {
         softness: args.softness.unwrap_or(current.softness),
-        penumbra_length_scale: args
-            .penumbra_length_scale
-            .unwrap_or(current.penumbra_length_scale),
+        shadow_contact_offset: args
+            .shadow_contact_offset
+            .unwrap_or(current.shadow_contact_offset),
+        shadow_back_gradient_strength: args
+            .shadow_back_gradient_strength
+            .unwrap_or(current.shadow_back_gradient_strength),
+        shadow_debug_light_index: args
+            .shadow_debug_light_index
+            .unwrap_or(current.shadow_debug_light_index),
+        shadow_debug_mode: args.shadow_debug_mode.unwrap_or(current.shadow_debug_mode),
         ambient: args.ambient.unwrap_or(current.ambient),
+        light_radius: args.light_radius.unwrap_or(current.light_radius),
+        quality_preset: args.quality_preset.unwrap_or(current.quality_preset),
+        max_shadow_updates_per_frame: args
+            .max_shadow_updates_per_frame
+            .unwrap_or(current.max_shadow_updates_per_frame),
+        angular_resolution: args
+            .angular_resolution
+            .or(args.map_resolution)
+            .unwrap_or(current.angular_resolution),
+        map_resolution: args.map_resolution.unwrap_or(current.map_resolution),
     }
     .sanitized();
     engine

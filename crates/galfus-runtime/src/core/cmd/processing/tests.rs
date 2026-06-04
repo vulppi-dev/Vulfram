@@ -66,11 +66,11 @@ fn command_signature_differs_for_different_payloads() {
 #[test]
 fn classify_failed_response_marks_transient_dependency() {
     let engine = EngineState::new();
-    let cmd = EngineCmd::CmdShadowConfigure(res::shadow::CmdShadowConfigureArgs {
+    let cmd = EngineCmd::CmdShadow3dConfigure(res::shadow::CmdShadow3dConfigureArgs {
         window_id: 10,
-        config: res::shadow::ShadowConfig::default(),
+        config: res::shadow::Shadow3dConfig::default(),
     });
-    let response = CommandResponse::ShadowConfigure(res::shadow::CmdResultShadowConfigure {
+    let response = CommandResponse::Shadow3dConfigure(res::shadow::CmdResultShadow3dConfigure {
         success: false,
         message: "Window 10 not found or shadow manager not initialized".into(),
     });

@@ -300,7 +300,6 @@ mod tests {
                 layer_mask: 1,
                 shadow_layer_mask: None,
                 shadow_softness: None,
-                shadow_penumbra_length_scale: None,
                 cast_shadow: false,
                 active: true,
             },

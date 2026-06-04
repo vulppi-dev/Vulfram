@@ -15,14 +15,21 @@ pub fn pass_shadow_3d_update(
 }
 
 pub fn pass_shadow_2d_update(
-    _render_state: &mut RenderState,
-    _device: &wgpu::Device,
-    _queue: &wgpu::Queue,
-    _encoder: &mut wgpu::CommandEncoder,
-    _frame_index: u64,
+    render_state: &mut RenderState,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_index: u64,
+    target_size: glam::UVec2,
 ) {
-    // Realm2D now uses analytic occlusion for shadow projection and does not
-    // depend on shadow-map atlas/page-table updates.
+    crate::core::render::passes::two_d::pass_2d_shadow_masks_update(
+        render_state,
+        device,
+        queue,
+        encoder,
+        frame_index,
+        target_size,
+    );
 }
 
 fn pass_shadow_update_impl(
@@ -32,7 +39,7 @@ fn pass_shadow_update_impl(
     encoder: &mut wgpu::CommandEncoder,
     frame_index: u64,
 ) {
-    let shadow_manager = match render_state.shadow.as_mut() {
+    let shadow_manager = match render_state.shadow_3d.as_mut() {
         Some(s) => s,
         None => return,
     };

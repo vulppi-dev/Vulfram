@@ -86,7 +86,7 @@ pub(super) fn maybe_emit_response_error_event(
         CommandResponse::EnvironmentDispose(result) => {
             failure_case!(result, "environment-dispose")
         }
-        CommandResponse::ShadowConfigure(result) => failure_case!(result, "shadow-configure"),
+        CommandResponse::Shadow3dConfigure(result) => failure_case!(result, "shadow3d-configure"),
         CommandResponse::RealmCreate(result) => failure_case!(result, "realm-create"),
         CommandResponse::RealmDispose(result) => failure_case!(result, "realm-dispose"),
         CommandResponse::RenderGraphUpsert(result) => {

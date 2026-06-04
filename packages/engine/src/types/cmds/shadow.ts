@@ -1,5 +1,5 @@
 /** Shadow rendering configuration. */
-export interface ShadowConfig {
+export interface Shadow3dConfig {
   tileResolution?: number;
   atlasTilesW?: number;
   atlasTilesH?: number;
@@ -10,13 +10,13 @@ export interface ShadowConfig {
 }
 
 /** Command payload for shadow configuration. */
-export interface CmdShadowConfigureArgs {
+export interface CmdShadow3dConfigureArgs {
   windowId: number;
-  config: ShadowConfig;
+  config: Shadow3dConfig;
 }
 
 /** Result payload for shadow configuration. */
-export interface CmdResultShadowConfigure {
+export interface CmdResultShadow3dConfigure {
   success: boolean;
   message: string;
 }

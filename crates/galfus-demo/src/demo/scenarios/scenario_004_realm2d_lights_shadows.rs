@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use galfus_core::core;
 use galfus_core::core::GalfusResult;
@@ -8,7 +7,6 @@ use galfus_core::core::cmd::{
     CmdCamera2dUpsertArgs, CmdLight3dUpsertArgs, CmdMaterialUpsertArgs, CmdShape2dUpsertArgs,
     CmdSprite2dUpsertArgs, EngineCmd,
 };
-use galfus_core::core::input::events::{ElementState, KeyboardEvent};
 use galfus_core::core::realm::cmd::{CmdRealmCreateArgs, CmdRealmDisposeArgs, RealmKindDto};
 use galfus_core::core::resources::{
     CmdCamera2dCreateArgs, CmdCamera2dUpdateArgs, CmdLightCreateArgs, CmdLightUpdateArgs,
@@ -44,17 +42,6 @@ const FLOOR_ID: u32 = 410;
 const LIGHT_A_ID: u32 = 411;
 const LIGHT_B_ID: u32 = 412;
 const BACKDROP_ID: u32 = 413;
-const KEY_DIGIT_1: u32 = 6;
-const KEY_DIGIT_2: u32 = 7;
-const KEY_NUMPAD_1: u32 = 77;
-const KEY_NUMPAD_2: u32 = 78;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ShadowPreset {
-    Cinematic,
-    Hard,
-}
-
 pub fn run(ctx: DemoContext, options: DemoRunOptions) -> bool {
     let _ = send_commands(vec![EngineCmd::CmdSystemLogLevelSet(
         CmdSystemLogLevelSetArgs {
@@ -86,13 +73,7 @@ pub fn run(ctx: DemoContext, options: DemoRunOptions) -> bool {
     ));
 
     let _ = send_commands(setup);
-    let _ = send_commands(build_shadow_preset_updates(
-        realm_2d,
-        ShadowPreset::Cinematic,
-    ));
-
-    let preset_state = Arc::new(Mutex::new(ShadowPreset::Cinematic));
-    let event_state = Arc::clone(&preset_state);
+    let _ = send_commands(build_shadow_runtime_updates(realm_2d));
 
     run_with_window_loop(
         ctx.window_id,
@@ -102,16 +83,7 @@ pub fn run(ctx: DemoContext, options: DemoRunOptions) -> bool {
             let updates = build_animated_updates(realm_2d, t);
             let _ = send_commands(updates);
         },
-        move |events| {
-            if let Some(new_preset) = detect_preset_hotkey(&events)
-                && let Ok(mut guard) = event_state.lock()
-                && *guard != new_preset
-            {
-                *guard = new_preset;
-                let _ = send_commands(build_shadow_preset_updates(realm_2d, new_preset));
-            }
-            print_runtime_logs(events);
-        },
+        move |events| print_runtime_logs(events),
     )
 }
 
@@ -193,9 +165,17 @@ fn build_scene(realm_id: u32) -> Vec<EngineCmd> {
         })),
         EngineCmd::CmdRealm2dShadowConfigUpdate(CmdRealm2dShadowConfigUpdateArgs {
             realm_id,
-            softness: Some(0.28),
-            penumbra_length_scale: Some(0.45),
+            softness: Some(0.45),
+            shadow_contact_offset: Some(0.0),
+            shadow_back_gradient_strength: Some(0.0),
+            shadow_debug_light_index: Some(-1),
+            shadow_debug_mode: Some(0),
             ambient: Some(0.0),
+            light_radius: Some(0.7),
+            quality_preset: Some(galfus_core::core::resources::Realm2dShadowQualityPreset::Quality),
+            max_shadow_updates_per_frame: Some(64),
+            angular_resolution: Some(1024),
+            map_resolution: Some(512),
         }),
         EngineCmd::CmdShape2dUpsert(CmdShape2dUpsertArgs::Create(CmdShape2dCreateArgs {
             realm_id,
@@ -296,13 +276,12 @@ fn build_scene(realm_id: u32) -> Vec<EngineCmd> {
             direction: None,
             color: Some(Vec4::new(0.25, 0.95, 1.0, 1.0)),
             ground_color: None,
-            intensity: Some(3.2),
+            intensity: Some(4.2),
             range: Some(7.0),
             spot_inner_outer: None,
             layer_mask: u32::MAX,
             shadow_layer_mask: None,
-            shadow_softness: Some(0.24),
-            shadow_penumbra_length_scale: Some(0.4),
+            shadow_softness: Some(0.45),
             active: true,
             cast_shadow: true,
         })),
@@ -315,13 +294,12 @@ fn build_scene(realm_id: u32) -> Vec<EngineCmd> {
             direction: None,
             color: Some(Vec4::new(1.0, 0.45, 0.25, 1.0)),
             ground_color: None,
-            intensity: Some(3.0),
+            intensity: Some(2.6),
             range: Some(6.8),
             spot_inner_outer: None,
             layer_mask: u32::MAX,
             shadow_layer_mask: None,
-            shadow_softness: Some(0.32),
-            shadow_penumbra_length_scale: Some(0.55),
+            shadow_softness: Some(0.3),
             active: true,
             cast_shadow: true,
         })),
@@ -454,22 +432,21 @@ fn full_layout(z_index: i32) -> TargetLayerLayout {
     }
 }
 
-fn build_shadow_preset_updates(realm_id: u32, preset: ShadowPreset) -> Vec<EngineCmd> {
-    let (global_softness, global_penumbra_scale, global_ambient) = match preset {
-        ShadowPreset::Cinematic => (0.08, 0.18, 0.02),
-        ShadowPreset::Hard => (0.02, 0.08, 0.0),
-    };
-    let (light_a_softness, light_a_penumbra_scale, light_b_softness, light_b_penumbra_scale) =
-        match preset {
-            ShadowPreset::Cinematic => (0.06, 0.16, 0.11, 0.24),
-            ShadowPreset::Hard => (0.02, 0.08, 0.03, 0.10),
-        };
+fn build_shadow_runtime_updates(realm_id: u32) -> Vec<EngineCmd> {
     vec![
         EngineCmd::CmdRealm2dShadowConfigUpdate(CmdRealm2dShadowConfigUpdateArgs {
             realm_id,
-            softness: Some(global_softness),
-            penumbra_length_scale: Some(global_penumbra_scale),
-            ambient: Some(global_ambient),
+            softness: Some(0.45),
+            shadow_contact_offset: Some(0.0),
+            shadow_back_gradient_strength: Some(0.0),
+            shadow_debug_light_index: Some(-1),
+            shadow_debug_mode: Some(0),
+            ambient: Some(0.0),
+            light_radius: Some(0.7),
+            quality_preset: Some(galfus_core::core::resources::Realm2dShadowQualityPreset::Quality),
+            max_shadow_updates_per_frame: Some(64),
+            angular_resolution: Some(1024),
+            map_resolution: Some(512),
         }),
         EngineCmd::CmdLight3dUpsert(CmdLight3dUpsertArgs::Update(CmdLightUpdateArgs {
             realm_id,
@@ -485,8 +462,7 @@ fn build_shadow_preset_updates(realm_id: u32, preset: ShadowPreset) -> Vec<Engin
             spot_inner_outer: None,
             layer_mask: None,
             shadow_layer_mask: None,
-            shadow_softness: Some(light_a_softness),
-            shadow_penumbra_length_scale: Some(light_a_penumbra_scale),
+            shadow_softness: Some(0.45),
             active: None,
             cast_shadow: None,
         })),
@@ -504,36 +480,11 @@ fn build_shadow_preset_updates(realm_id: u32, preset: ShadowPreset) -> Vec<Engin
             spot_inner_outer: None,
             layer_mask: None,
             shadow_layer_mask: None,
-            shadow_softness: Some(light_b_softness),
-            shadow_penumbra_length_scale: Some(light_b_penumbra_scale),
+            shadow_softness: Some(0.3),
             active: None,
             cast_shadow: None,
         })),
     ]
-}
-
-fn detect_preset_hotkey(events: &[EngineEvent]) -> Option<ShadowPreset> {
-    for event in events {
-        let EngineEvent::Keyboard(KeyboardEvent::OnInput {
-            key_code,
-            state,
-            repeat,
-            ..
-        }) = event
-        else {
-            continue;
-        };
-        if *state != ElementState::Pressed || *repeat {
-            continue;
-        }
-        if *key_code == KEY_DIGIT_1 || *key_code == KEY_NUMPAD_1 {
-            return Some(ShadowPreset::Cinematic);
-        }
-        if *key_code == KEY_DIGIT_2 || *key_code == KEY_NUMPAD_2 {
-            return Some(ShadowPreset::Hard);
-        }
-    }
-    None
 }
 
 fn print_runtime_logs(events: Vec<EngineEvent>) {

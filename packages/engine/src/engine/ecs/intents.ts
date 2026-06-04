@@ -1,6 +1,6 @@
 import type { Vec3 as vec3, Vec4 as vec4 } from '../../math/index';
 import type { EnvironmentConfig } from '../../types/cmds/environment';
-import type { ShadowConfig } from '../../types/cmds/shadow';
+import type { Shadow3dConfig } from '../../types/cmds/shadow';
 import type { NotificationLevel } from '../../types/kinds';
 import type { JsonObject } from '../../types/json';
 import type {
@@ -74,7 +74,7 @@ export type Intent =
       title: string;
       message: string;
     }
-  | { type: 'configure-shadows'; config: ShadowConfig }
+  | { type: 'configure-shadows'; config: Shadow3dConfig }
   | {
       type: 'gizmo-draw-line';
       start: vec3;

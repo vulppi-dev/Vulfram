@@ -50,7 +50,8 @@ impl RenderState {
             vertex: None,
             light_system: None,
             gizmos: GizmoSystem::new(),
-            shadow: None,
+            shadow_3d: None,
+            shadow_2d: None,
             cache: RenderCache::new(),
             material_shader_modules: HashMap::new(),
             custom_screen_param_buffer: None,
@@ -113,7 +114,8 @@ impl RenderState {
         self.library = None;
         self.vertex = None;
         self.light_system = None;
-        self.shadow = None;
+        self.shadow_3d = None;
+        self.shadow_2d = None;
         self.cache.clear();
         self.material_shader_modules.clear();
         self.custom_screen_param_buffer = None;
@@ -184,7 +186,10 @@ impl RenderState {
             light_system.camera_frustums.begin_frame(frame_index);
             light_system.light_params.begin_frame(frame_index);
         }
-        if let Some(shadow) = self.shadow.as_mut() {
+        if let Some(shadow) = self.shadow_3d.as_mut() {
+            shadow.begin_frame(frame_index);
+        }
+        if let Some(shadow) = self.shadow_2d.as_mut() {
             shadow.begin_frame(frame_index);
         }
         self.gizmos.clear();
@@ -195,7 +200,6 @@ impl RenderState {
         self.compose_bind_cache_evictions = 0;
         self.post_bind_cache_evictions = 0;
         self.material_shader_module_evictions = 0;
-        self.two_d_pass_resources = None;
         self.cache.reset_frame_stats();
         self.cache.gc(frame_index);
         self.two_d_prepared.cameras.clear();

@@ -1,4 +1,4 @@
-import type { ShadowConfig } from '../../../types/cmds/shadow';
+import type { Shadow3dConfig } from '../../../types/cmds/shadow';
 import type { EnvironmentConfig, CmdEnvironmentDisposeArgs } from '../../../types/cmds/environment';
 import type { CmdResourceGetArgs, CmdResourceListArgs } from '../../../types/cmds/resources';
 import type {
@@ -236,7 +236,7 @@ export function sendNotification(
 }
 
 /** Configures shadow settings for the world. */
-export function configureShadows(worldId: number, config: ShadowConfig): void {
+export function configureShadows(worldId: number, config: Shadow3dConfig): void {
   emitIntent(worldId, {
     type: 'configure-shadows',
     config

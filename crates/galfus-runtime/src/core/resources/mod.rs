@@ -8,6 +8,7 @@ mod material;
 mod model;
 mod query;
 pub mod shadow;
+pub mod shadow2d;
 mod spec;
 mod storage;
 mod texture;

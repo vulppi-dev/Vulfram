@@ -11,7 +11,8 @@ pub mod skinning;
 use crate::core::render::cache::RenderCache;
 use crate::core::render::gizmos::GizmoSystem;
 use crate::core::resources::VertexAllocatorSystem;
-use crate::core::resources::shadow::ShadowManager;
+use crate::core::resources::shadow::ShadowManager3d;
+use crate::core::resources::shadow2d::ShadowManager2d;
 use crate::core::resources::{
     Camera2dRecord, CameraNode, EnvironmentConfig, ForwardAtlasEntry, GeometryPrimitiveType,
     LightRecord, MaterialDefinitionRecord, MaterialInstanceRecord, ModelRecord,
@@ -125,13 +126,16 @@ pub struct TwoDPassResources {
     pub pipeline_layout: wgpu::PipelineLayout,
     pub camera_dynamic_buffer: wgpu::Buffer,
     pub light_storage_buffer: wgpu::Buffer,
-    pub occluder_storage_buffer: wgpu::Buffer,
     pub global_bind_group: wgpu::BindGroup,
     pub camera_dynamic_stride: u64,
     pub camera_dynamic_capacity_slots: usize,
     pub light_capacity_slots: usize,
-    pub occluder_capacity_slots: usize,
     pub fallback_depth_view: wgpu::TextureView,
+    pub shadow_mask_texture: wgpu::Texture,
+    pub shadow_mask_view: wgpu::TextureView,
+    pub shadow_mask_size: glam::UVec2,
+    pub shadow_compute_bind_group_layout: wgpu::BindGroupLayout,
+    pub shadow_compute_pipeline: wgpu::ComputePipeline,
 }
 
 #[derive(Debug, Default)]
@@ -184,7 +188,8 @@ pub struct RenderState {
     pub vertex: Option<VertexAllocatorSystem>,
     pub light_system: Option<LightCullingSystem>,
     pub gizmos: GizmoSystem,
-    pub shadow: Option<ShadowManager>,
+    pub shadow_3d: Option<ShadowManager3d>,
+    pub shadow_2d: Option<ShadowManager2d>,
     pub cache: RenderCache,
     pub material_shader_modules: std::collections::HashMap<u64, wgpu::ShaderModule>,
     pub custom_screen_param_buffer: Option<wgpu::Buffer>,
@@ -340,7 +345,7 @@ impl RenderState {
                     .unwrap_or(0),
             )
             .saturating_add(
-                self.shadow
+                self.shadow_3d
                     .as_ref()
                     .map(Self::shadow_manager_gpu_bytes)
                     .unwrap_or(0),
@@ -414,7 +419,7 @@ impl RenderState {
     }
 
     fn shadow_manager_gpu_bytes(
-        shadow_manager: &crate::core::resources::shadow::ShadowManager,
+        shadow_manager: &crate::core::resources::shadow::ShadowManager3d,
     ) -> u64 {
         shadow_manager
             .atlas
