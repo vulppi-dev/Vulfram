@@ -90,7 +90,6 @@ Runtime behavior:
 
 Realm-level shadow tuning command (`cmd-realm2d-shadow-config-update`) supports:
 
-- `softness`
 - `lightRadius`
 - `shadowContactOffset`
 - `ambient`
@@ -101,6 +100,7 @@ Current limits:
 
 - shadow mask generation runs in the 2D shadow GPU pass
 - runtime quality/performance depends primarily on angular resolution and visible occluder complexity
+- cone opening is derived from `lightRadius`
 
 ## 6. IDs and Reserved Range
 

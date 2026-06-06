@@ -299,7 +299,6 @@ mod tests {
                 spot_inner_outer: None,
                 layer_mask: 1,
                 shadow_layer_mask: None,
-                shadow_softness: None,
                 cast_shadow: false,
                 active: true,
             },

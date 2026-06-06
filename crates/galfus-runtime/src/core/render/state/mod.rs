@@ -41,6 +41,7 @@ pub type Realm3dState = galfus_realm_3d::Realm3dState<
 >;
 pub type Realm2dState = galfus_realm_2d::Realm2dState<
     Camera2dRecord,
+    LightRecord,
     Sprite2dRecord,
     Shape2dRecord,
     ShaderMaterialRecord,
@@ -49,6 +50,7 @@ pub type Realm2dState = galfus_realm_2d::Realm2dState<
 #[derive(Debug, Default, Clone)]
 pub struct TwoDSourceState {
     pub cameras: std::collections::HashMap<u32, Camera2dRecord>,
+    pub lights: std::collections::HashMap<u32, LightRecord>,
     pub sprites: std::collections::HashMap<u32, Sprite2dRecord>,
     pub shapes: std::collections::HashMap<u32, Shape2dRecord>,
     pub shadow_config: Realm2dShadowConfig,
@@ -58,6 +60,24 @@ pub struct TwoDSourceState {
 pub enum TwoDItemKind {
     Sprite,
     Shape,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TwoDOccluderSourceKind {
+    Sprite,
+    Shape,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TwoDOccluderEdge {
+    pub a: glam::Vec2,
+    pub b: glam::Vec2,
+}
+
+#[derive(Debug, Clone)]
+pub struct TwoDOccluderSilhouette {
+    pub vertices: [glam::Vec2; 4],
+    pub edges: [TwoDOccluderEdge; 4],
 }
 
 #[derive(Debug, Clone)]
@@ -85,10 +105,22 @@ pub struct TwoDPreparedItem {
     pub shadow_layer_mask: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct TwoDPreparedOccluder {
+    pub occluder_id: u32,
+    pub source_kind: TwoDOccluderSourceKind,
+    pub transform: glam::Mat4,
+    pub silhouette: TwoDOccluderSilhouette,
+    pub layer: i32,
+    pub shadow_height: f32,
+    pub shadow_layer_mask: u32,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct TwoDPreparedState {
     pub cameras: Vec<TwoDPreparedCamera>,
     pub items: Vec<TwoDPreparedItem>,
+    pub occluders: Vec<TwoDPreparedOccluder>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -126,16 +158,14 @@ pub struct TwoDPassResources {
     pub pipeline_layout: wgpu::PipelineLayout,
     pub camera_dynamic_buffer: wgpu::Buffer,
     pub light_storage_buffer: wgpu::Buffer,
+    pub shadow_sample_buffer: wgpu::Buffer,
     pub global_bind_group: wgpu::BindGroup,
     pub camera_dynamic_stride: u64,
     pub camera_dynamic_capacity_slots: usize,
     pub light_capacity_slots: usize,
     pub fallback_depth_view: wgpu::TextureView,
-    pub shadow_mask_texture: wgpu::Texture,
-    pub shadow_mask_view: wgpu::TextureView,
     pub shadow_mask_size: glam::UVec2,
-    pub shadow_compute_bind_group_layout: wgpu::BindGroupLayout,
-    pub shadow_compute_pipeline: wgpu::ComputePipeline,
+    pub shadow_sample_capacity: usize,
 }
 
 #[derive(Debug, Default)]

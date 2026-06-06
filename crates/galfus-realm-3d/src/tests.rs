@@ -284,7 +284,6 @@ fn entity_and_material_change_detectors_compare_semantic_fields() {
         active: true,
         layer_mask: 1,
         shadow_layer_mask: u32::MAX,
-        shadow_softness: None,
         cast_shadow: false,
     };
     let changed_light = LightRecordMeta {

@@ -783,17 +783,28 @@ struct Light2D {
     position: vec4<f32>,
     color: vec4<f32>,
     intensity_range: vec2<f32>,
-    shadow_softness: f32,
-    _padding_softness: f32,
     light_radius: f32,
-    _padding0: u32,
+    _padding0: f32,
     kind_flags: vec2<u32>,
     shadow_layer_mask: u32,
     shadow_index: u32,
-    _padding1: vec2<u32>,
 }
 @group(0) @binding(5) var<storage, read> lights_2d: array<Light2D>;
-@group(0) @binding(6) var shadow_mask_2d: texture_2d_array<f32>;
+struct ShadowSample2D {
+    blocker_distance: f32,
+    blocker_left: f32,
+    blocker_right: f32,
+    flags: f32,
+    penumbra_left: f32,
+    penumbra_right: f32,
+    support_left_distance: f32,
+    support_right_distance: f32,
+    occluder_v0: vec2<f32>,
+    occluder_v1: vec2<f32>,
+    occluder_v2: vec2<f32>,
+    occluder_v3: vec2<f32>,
+}
+@group(0) @binding(6) var<storage, read> shadow_samples_2d: array<ShadowSample2D>;
 
 struct MaterialParams {
     input_indices: vec4<u32>,
@@ -887,14 +898,148 @@ fn load_scene_depth(pixel: vec2<i32>) -> f32 {
     return textureLoad(frame_scene_depth, pixel, 0);
 }
 
-fn sample_shadow_blocker_2d(layer: i32, shadow_res: f32, shadow_res_i: i32, angular_x: f32) -> f32 {
+fn unwrap_angle_near(angle: f32, reference: f32) -> f32 {
+    var unwrapped = angle;
+    let pi = 3.14159265359;
+    let tau = 6.28318530718;
+    loop {
+        if (unwrapped - reference > pi) {
+            unwrapped = unwrapped - tau;
+            continue;
+        }
+        if (unwrapped - reference < -pi) {
+            unwrapped = unwrapped + tau;
+            continue;
+        }
+        break;
+    }
+    return unwrapped;
+}
+
+fn sample_shadow_data_2d(
+    layer: i32,
+    shadow_res: f32,
+    shadow_res_i: i32,
+    angular_x: f32,
+    candidate_slot: u32,
+) -> ShadowSample2D {
     let wrapped = angular_x - floor(angular_x / shadow_res) * shadow_res;
     let x0 = i32(floor(wrapped)) % shadow_res_i;
-    let frac_x = fract(wrapped);
-    let xp1 = (x0 + 1) % shadow_res_i;
-    let b0 = textureLoad(shadow_mask_2d, vec2<i32>(x0, 0), layer, 0).r;
-    let bp1 = textureLoad(shadow_mask_2d, vec2<i32>(xp1, 0), layer, 0).r;
-    return mix(b0, bp1, frac_x);
+    let samples_per_direction = 4u;
+    let direction_index = u32(max(layer, 0)) * u32(shadow_res_i) + u32(max(x0, 0));
+    let index = direction_index * samples_per_direction + min(candidate_slot, samples_per_direction - 1u);
+    return shadow_samples_2d[index];
+}
+
+fn cross2_2d(a: vec2<f32>, b: vec2<f32>) -> f32 {
+    return a.x * b.y - a.y * b.x;
+}
+
+fn ray_segment_hit_distance_2d(
+    ray_origin: vec2<f32>,
+    ray_dir: vec2<f32>,
+    segment_a: vec2<f32>,
+    segment_b: vec2<f32>,
+) -> f32 {
+    let v1 = ray_origin - segment_a;
+    let v2 = segment_b - segment_a;
+    let den = cross2_2d(ray_dir, v2);
+    if (abs(den) <= 1e-6) {
+        return -1.0;
+    }
+    let t = cross2_2d(v2, v1) / den;
+    let q = cross2_2d(ray_dir, v1) / den;
+    if (t >= 0.0 && q >= 0.0 && q <= 1.0) {
+        return t;
+    }
+    return -1.0;
+}
+
+fn ray_hits_occluder_before_light_2d(
+    ray_origin: vec2<f32>,
+    ray_dir: vec2<f32>,
+    max_distance: f32,
+    sample: ShadowSample2D,
+) -> bool {
+    let hit0 = ray_segment_hit_distance_2d(ray_origin, ray_dir, sample.occluder_v0, sample.occluder_v1);
+    let hit1 = ray_segment_hit_distance_2d(ray_origin, ray_dir, sample.occluder_v1, sample.occluder_v2);
+    let hit2 = ray_segment_hit_distance_2d(ray_origin, ray_dir, sample.occluder_v2, sample.occluder_v3);
+    let hit3 = ray_segment_hit_distance_2d(ray_origin, ray_dir, sample.occluder_v3, sample.occluder_v0);
+    let min_hit = min(min(select(1e20, hit0, hit0 >= 0.0), select(1e20, hit1, hit1 >= 0.0)), min(select(1e20, hit2, hit2 >= 0.0), select(1e20, hit3, hit3 >= 0.0)));
+    return min_hit < max(max_distance, 0.0);
+}
+
+fn occluder_covers_light_disk_from_receiver(
+    sample: ShadowSample2D,
+    world_xy: vec2<f32>,
+    light_xy: vec2<f32>,
+    light_radius: f32,
+) -> bool {
+    let to_light = light_xy - world_xy;
+    let light_distance = length(to_light);
+    if (light_distance <= max(light_radius, 0.0001)) {
+        return false;
+    }
+
+    let center_dir = to_light / light_distance;
+    let light_radius_clamped = max(light_radius, 0.0);
+    let half_angle = asin(clamp(light_radius_clamped / max(light_distance, 0.0001), 0.0, 0.9999));
+    let tangent_distance = sqrt(max(light_distance * light_distance - light_radius_clamped * light_radius_clamped, 0.0));
+    let c = cos(half_angle);
+    let s = sin(half_angle);
+    let left_dir = vec2<f32>(
+        center_dir.x * c - center_dir.y * s,
+        center_dir.x * s + center_dir.y * c,
+    );
+    let right_dir = vec2<f32>(
+        center_dir.x * c + center_dir.y * s,
+        -center_dir.x * s + center_dir.y * c,
+    );
+
+    return ray_hits_occluder_before_light_2d(world_xy, center_dir, light_distance, sample)
+        && ray_hits_occluder_before_light_2d(world_xy, left_dir, tangent_distance, sample)
+        && ray_hits_occluder_before_light_2d(world_xy, right_dir, tangent_distance, sample);
+}
+
+fn shadow_visibility_from_sample(
+    sample: ShadowSample2D,
+    angle: f32,
+    dist_ratio: f32,
+    contact_offset: f32,
+    world_xy: vec2<f32>,
+    light_xy: vec2<f32>,
+    light_radius: f32,
+) -> f32 {
+    if (sample.flags < 0.5) {
+        return select(0.0, 1.0, dist_ratio <= sample.blocker_distance + contact_offset);
+    }
+
+    if (occluder_covers_light_disk_from_receiver(sample, world_xy, light_xy, light_radius)) {
+        return 0.0;
+    }
+
+    let blocker_center = 0.5 * (sample.blocker_left + sample.blocker_right);
+    let sample_angle = unwrap_angle_near(angle, blocker_center);
+    let blocker_left = sample.blocker_left;
+    let blocker_right = sample.blocker_right;
+    let left_cos = max(cos(sample_angle - blocker_left), 0.0001);
+    let right_cos = max(cos(sample_angle - blocker_right), 0.0001);
+    let left_start = sample.support_left_distance / left_cos;
+    let right_start = sample.support_right_distance / right_cos;
+    var shadow_start = sample.blocker_distance;
+    if (sample_angle < blocker_left) {
+        shadow_start = left_start;
+    } else if (sample_angle > blocker_right) {
+        shadow_start = right_start;
+    } else {
+        let edge_t = clamp((sample_angle - blocker_left) / max(blocker_right - blocker_left, 1e-4), 0.0, 1.0);
+        shadow_start = mix(left_start, right_start, edge_t);
+    }
+    if (dist_ratio <= shadow_start + contact_offset) {
+        return 1.0;
+    }
+
+    return 1.0;
 }
 
 fn apply_2d_lighting(base_color: vec4<f32>, world_pos: vec3<f32>) -> vec4<f32> {
@@ -923,41 +1068,28 @@ fn apply_2d_lighting(base_color: vec4<f32>, world_pos: vec3<f32>) -> vec4<f32> {
         let layer = i32(l.shadow_index);
         let shadow_res_i = i32(shadow_res);
         let angular_x = angular_u * shadow_res;
-        let blocker = sample_shadow_blocker_2d(layer, shadow_res, shadow_res_i, angular_x);
-        let base_softness = max(l.shadow_softness, 0.0);
-        let blocker_safe = max(blocker, 0.0001);
-        let angular_texel = 1.0 / shadow_res;
-        let receiver_behind_blocker = dist_ratio - blocker_safe;
-        var shadow_visibility = 1.0;
         let contact_offset = max(camera.shadow_controls.x, 0.0);
-        if (receiver_behind_blocker > 0.0) {
-            let blocker_world = blocker_safe * range;
-            let receiver_world = dist;
-            let travel_world = max(receiver_world - blocker_world, 0.0);
-            let source_radius = max(l.light_radius, 0.0001);
-            let penumbra_world = source_radius * travel_world / max(blocker_world, 0.0001);
-            let penumbra_angle = atan2(penumbra_world, max(receiver_world, 0.0001));
-            let cone_texels = (penumbra_angle / tau) * shadow_res;
-            let filter_texels = max(cone_texels, base_softness * 0.75);
-            if (filter_texels <= 1.0) {
-                shadow_visibility = select(0.0, 1.0, dist_ratio <= blocker_safe + contact_offset);
-            } else {
-                let taps = 7;
-                let half_taps = 3.0;
-                var visibility_accum = 0.0;
-                for (var tap = 0; tap < taps; tap = tap + 1) {
-                    let centered = f32(tap) - half_taps;
-                    let sample_x = angular_x + centered * (filter_texels / half_taps);
-                    let sample_blocker =
-                        sample_shadow_blocker_2d(layer, shadow_res, shadow_res_i, sample_x);
-                    visibility_accum += select(
-                        0.0,
-                        1.0,
-                        dist_ratio <= sample_blocker + contact_offset
-                    );
-                }
-                shadow_visibility = pow(clamp(visibility_accum / f32(taps), 0.0, 1.0), 1.1);
-            }
+        var shadow_visibility = 1.0;
+        for (var candidate_slot = 0u; candidate_slot < 4u; candidate_slot = candidate_slot + 1u) {
+            let shadow_sample = sample_shadow_data_2d(
+                layer,
+                shadow_res,
+                shadow_res_i,
+                angular_x,
+                candidate_slot
+            );
+            shadow_visibility = min(
+                shadow_visibility,
+                shadow_visibility_from_sample(
+                    shadow_sample,
+                    angle,
+                    dist_ratio,
+                    contact_offset,
+                    world_pos.xy,
+                    l.position.xy,
+                    l.light_radius
+                )
+            );
         }
         let visibility = select(1.0, shadow_visibility, receives_shadow);
         max_shadow_occlusion = max(max_shadow_occlusion, 1.0 - visibility);
@@ -1231,6 +1363,11 @@ fn fragment(input: FragmentInput) -> FragmentOutput {
         assert!(compiled.source.contains("fn sample_material("));
         assert!(compiled.source.contains("@vertex"));
         assert!(compiled.source.contains("@fragment"));
-        assert!(compiled.source.contains("let angular_x = angular_u * shadow_res;"));
+        assert!(
+            compiled
+                .source
+                .contains("let angular_x = angular_u * shadow_res;")
+        );
+        assert!(compiled.source.contains("fn sample_shadow_data_2d("));
     }
 }
