@@ -43,7 +43,7 @@ pub(super) fn response_is_success(response: &CommandResponse) -> bool {
         CommandResponse::PrimitiveGeometryCreate(result) => result.success,
         CommandResponse::EnvironmentUpsert(result) => result.success,
         CommandResponse::EnvironmentDispose(result) => result.success,
-        CommandResponse::ShadowConfigure(result) => result.success,
+        CommandResponse::Shadow3dConfigure(result) => result.success,
         CommandResponse::RealmCreate(result) => result.success,
         CommandResponse::RealmDispose(result) => result.success,
         CommandResponse::RenderGraphUpsert(result) => result.success,
@@ -111,7 +111,7 @@ pub(super) fn response_message(response: &CommandResponse) -> Option<String> {
         CommandResponse::PrimitiveGeometryCreate(result) => Some(result.message.clone()),
         CommandResponse::EnvironmentUpsert(result) => Some(result.message.clone()),
         CommandResponse::EnvironmentDispose(result) => Some(result.message.clone()),
-        CommandResponse::ShadowConfigure(result) => Some(result.message.clone()),
+        CommandResponse::Shadow3dConfigure(result) => Some(result.message.clone()),
         CommandResponse::RealmCreate(result) => Some(result.message.clone()),
         CommandResponse::RealmDispose(result) => Some(result.message.clone()),
         CommandResponse::RenderGraphUpsert(result) => Some(result.message.clone()),
@@ -294,9 +294,9 @@ pub(super) fn response_with_message(response: CommandResponse, message: String) 
             result.message = message;
             CommandResponse::EnvironmentDispose(result)
         }
-        CommandResponse::ShadowConfigure(mut result) => {
+        CommandResponse::Shadow3dConfigure(mut result) => {
             result.message = message;
-            CommandResponse::ShadowConfigure(result)
+            CommandResponse::Shadow3dConfigure(result)
         }
         CommandResponse::RealmCreate(mut result) => {
             result.message = message;

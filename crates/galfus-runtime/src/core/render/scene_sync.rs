@@ -118,6 +118,7 @@ pub(super) fn sync_scene_from_realm_and_universal_resources(
                     kind_flags: record.data.kind_flags.to_array(),
                     active: record.active,
                     layer_mask: record.layer_mask,
+                    shadow_layer_mask: record.shadow_layer_mask,
                     cast_shadow: record.cast_shadow,
                 };
                 let next_meta = galfus_realm_3d::LightRecordMeta {
@@ -133,12 +134,14 @@ pub(super) fn sync_scene_from_realm_and_universal_resources(
                     kind_flags: node.data.kind_flags.to_array(),
                     active: node.active,
                     layer_mask: node.layer_mask,
+                    shadow_layer_mask: node.shadow_layer_mask,
                     cast_shadow: node.cast_shadow,
                 };
                 record.label = node.label.clone();
                 record.data = node.data;
                 record.active = node.active;
                 record.layer_mask = node.layer_mask;
+                record.shadow_layer_mask = node.shadow_layer_mask;
                 record.cast_shadow = node.cast_shadow;
                 let update_plan =
                     galfus_realm_3d::plan_light_record_update(&current_meta, &next_meta);
@@ -153,12 +156,25 @@ pub(super) fn sync_scene_from_realm_and_universal_resources(
     }
 
     render_state.two_d_source.cameras.clear();
+    render_state.two_d_source.lights.clear();
     render_state.two_d_source.sprites.clear();
     render_state.two_d_source.shapes.clear();
+    render_state.two_d_source.shadow_config = universal
+        .scene
+        .realm2d_shadow_configs
+        .get(&realm_id)
+        .copied()
+        .unwrap_or_default();
     if let Some(entities) = universal.scene.realm2d.entities.get(&realm_id) {
         render_state.two_d_source.cameras.extend(
             entities
                 .cameras
+                .iter()
+                .map(|(id, record)| (*id, record.clone())),
+        );
+        render_state.two_d_source.lights.extend(
+            entities
+                .lights
                 .iter()
                 .map(|(id, record)| (*id, record.clone())),
         );

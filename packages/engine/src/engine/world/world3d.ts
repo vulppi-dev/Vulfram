@@ -34,7 +34,7 @@ import type {
   CmdRenderGraphListArgs,
   CmdRenderGraphUpsertArgs
 } from '../../types/cmds/render-graph';
-import type { ShadowConfig } from '../../types/cmds/shadow';
+import type { Shadow3dConfig } from '../../types/cmds/shadow';
 import type { CmdTargetMeasurementArgs } from '../../types/cmds/target';
 import type { NotificationLevel } from '../../types/kinds';
 import {
@@ -337,7 +337,7 @@ export function configure3DEnvironment(worldId: World3DId, config: EnvironmentCo
  * });
  * ```
  */
-export function configure3DShadows(worldId: World3DId, config: ShadowConfig): void {
+export function configure3DShadows(worldId: World3DId, config: Shadow3dConfig): void {
   configureShadowsRaw(asWorldNumber(worldId), config);
 }
 

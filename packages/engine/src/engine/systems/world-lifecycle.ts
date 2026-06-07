@@ -1,5 +1,5 @@
 import type { EnvironmentConfig } from '../../types/cmds/environment';
-import type { ShadowConfig } from '../../types/cmds/shadow';
+import type { Shadow3dConfig } from '../../types/cmds/shadow';
 import { vec3, vec4 } from '../../math/index';
 import { enqueueCommand } from '../bridge/dispatch';
 import type { System } from '../ecs';
@@ -365,8 +365,8 @@ function normalizeEnvironmentConfig(config: EnvironmentConfig): EnvironmentConfi
   return payload;
 }
 
-function normalizeShadowConfig(config: ShadowConfig): ShadowConfig {
-  const payload: ShadowConfig = {};
+function normalizeShadowConfig(config: Shadow3dConfig): Shadow3dConfig {
+  const payload: Shadow3dConfig = {};
 
   if (
     config.tileResolution !== undefined &&
@@ -437,7 +437,7 @@ export const WorldLifecycleSystem: System = (world, context) => {
         });
       }
     } else if (intent.type === 'configure-shadows') {
-      const payload = normalizeShadowConfig(intent.config as ShadowConfig);
+      const payload = normalizeShadowConfig(intent.config as Shadow3dConfig);
       if (!hasOwnKeys(payload)) {
         continue;
       }
@@ -449,7 +449,7 @@ export const WorldLifecycleSystem: System = (world, context) => {
         }
       }
       if (windowId === undefined) continue;
-      enqueueCommand(context.worldId, 'cmd-shadow-configure', {
+      enqueueCommand(context.worldId, 'cmd-shadow3d-configure', {
         windowId,
         config: payload
       });

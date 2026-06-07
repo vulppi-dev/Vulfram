@@ -1,5 +1,6 @@
 use super::super::{BindingSystem, LightCullingSystem, RenderState, SamplerSet};
-use crate::core::resources::shadow::ShadowManager;
+use crate::core::resources::shadow::ShadowManager3d;
+use crate::core::resources::shadow2d::ShadowManager2d;
 use crate::core::resources::{
     StorageBufferPool, UniformBufferPool, VertexAllocatorConfig, VertexAllocatorSystem,
 };
@@ -56,7 +57,8 @@ impl RenderState {
             queue: queue.clone(),
         });
 
-        self.shadow = Some(ShadowManager::new(device, queue, 2048));
+        self.shadow_3d = Some(ShadowManager3d::new(device, queue, 2048));
+        self.shadow_2d = Some(ShadowManager2d::new());
     }
 
     pub(crate) fn init_samplers(&mut self, device: &wgpu::Device) -> SamplerSet {

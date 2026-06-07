@@ -298,6 +298,7 @@ mod tests {
                 range: Some(12.0),
                 spot_inner_outer: None,
                 layer_mask: 1,
+                shadow_layer_mask: None,
                 cast_shadow: false,
                 active: true,
             },

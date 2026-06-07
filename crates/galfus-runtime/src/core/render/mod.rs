@@ -573,7 +573,7 @@ pub fn render_frames(engine_state: &mut EngineState) {
                 window_state.inner_size,
                 Some(&camera_target_sizes),
             ) {
-                if let Some(shadow) = render_state.shadow.as_mut() {
+                if let Some(shadow) = render_state.shadow_3d.as_mut() {
                     shadow.mark_dirty();
                 }
             }
@@ -697,6 +697,13 @@ pub fn render_frames(engine_state: &mut EngineState) {
                     .push_event(crate::core::cmd::EngineEvent::Log(log_event));
             }
             queue.submit(Some(graph_encoder.finish()));
+            #[cfg(not(target_arch = "wasm32"))]
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                })
+                .ok();
 
             let mut overlay_encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -717,6 +724,13 @@ pub fn render_frames(engine_state: &mut EngineState) {
             updated_surfaces.insert(surface_id);
 
             queue.submit(Some(overlay_encoder.finish()));
+            #[cfg(not(target_arch = "wasm32"))]
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                })
+                .ok();
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let base_path = debug_capture_path_template
@@ -800,6 +814,13 @@ pub fn render_frames(engine_state: &mut EngineState) {
             );
 
             queue.submit(Some(encoder.finish()));
+            #[cfg(not(target_arch = "wasm32"))]
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                })
+                .ok();
             #[cfg(not(target_arch = "wasm32"))]
             {
                 if engine_state.debug_capture.should_capture() {

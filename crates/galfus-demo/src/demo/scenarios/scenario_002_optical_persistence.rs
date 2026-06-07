@@ -1,8 +1,3 @@
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-
-use galfus_core::core;
-use galfus_core::core::GalfusResult;
 use galfus_core::core::cmd::EngineEvent;
 use galfus_core::core::cmd::{
     CmdCamera3dUpsertArgs, CmdEnvironmentUpsertArgs, CmdLight3dUpsertArgs,
@@ -19,12 +14,14 @@ use galfus_core::core::target::{
     CmdTargetLayerUpsertArgs, CmdTargetUpsertArgs, DimensionValue, TargetKind, TargetLayerLayout,
 };
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use std::collections::HashMap;
 
 use crate::demo::DemoContext;
-use crate::demo::io::{receive_events, receive_responses, send_commands};
+use crate::demo::DemoRunOptions;
+use crate::demo::io::send_commands;
+use crate::demo::scenarios::run_with_window_loop;
 
 const FRAME_MS: u32 = 16;
-const RUN_DURATION: Duration = Duration::from_secs(8);
 
 const WINDOW_TARGET_ID: u64 = 1;
 const GEOMETRY_CUBE_ID: u32 = 201;
@@ -41,7 +38,7 @@ const MODEL_GHOST_CUBE_ID: u32 = 230;
 const MODEL_FRESNEL_CUBE_ID: u32 = 231;
 const MODEL_FLOOR_ID: u32 = 232;
 
-pub fn run(ctx: DemoContext) -> bool {
+pub fn run(ctx: DemoContext, options: DemoRunOptions) -> bool {
     let realm_3d = ctx.realm_id;
     let mut setup = vec![EngineCmd::CmdTargetUpsert(CmdTargetUpsertArgs {
         target_id: WINDOW_TARGET_ID,
@@ -62,66 +59,59 @@ pub fn run(ctx: DemoContext) -> bool {
     ));
     let _ = send_commands(setup);
 
-    let mut total_ms: u64 = 0;
-    let start = Instant::now();
-    while start.elapsed() < RUN_DURATION {
-        let t = total_ms as f32 / 1000.0;
-        let updates = vec![
-            EngineCmd::CmdModel3dUpsert(CmdModel3dUpsertArgs::Update(CmdModelUpdateArgs {
-                realm_id: realm_3d,
-                model_id: MODEL_GHOST_CUBE_ID,
-                label: None,
-                geometry_id: None,
-                material_id: None,
-                transform: Some(
-                    Mat4::from_translation(Vec3::new(
-                        -2.0 + (t * 2.4).sin() * 1.8,
-                        0.8 + (t * 3.0).sin() * 0.28,
-                        0.0,
-                    )) * Mat4::from_rotation_y(t * 2.8)
-                        * Mat4::from_rotation_x(t * 1.7),
-                ),
-                layer_mask: None,
-                active: None,
-                cast_shadow: None,
-                receive_shadow: None,
-                cast_outline: None,
-                outline_color: None,
-            })),
-            EngineCmd::CmdModel3dUpsert(CmdModel3dUpsertArgs::Update(CmdModelUpdateArgs {
-                realm_id: realm_3d,
-                model_id: MODEL_FRESNEL_CUBE_ID,
-                label: None,
-                geometry_id: None,
-                material_id: None,
-                transform: Some(
-                    Mat4::from_translation(Vec3::new(
-                        2.0 + (t * 2.0).sin() * 1.2,
-                        0.8 + (t * 2.6).sin() * 0.2,
-                        0.0,
-                    )) * Mat4::from_rotation_y(-(t * 2.2))
-                        * Mat4::from_rotation_x(t * 1.3),
-                ),
-                layer_mask: None,
-                active: None,
-                cast_shadow: None,
-                receive_shadow: None,
-                cast_outline: None,
-                outline_color: None,
-            })),
-        ];
-        let _ = send_commands(updates);
-        assert_eq!(
-            core::galfus_tick(total_ms as i64, FRAME_MS),
-            GalfusResult::Success
-        );
-        total_ms = total_ms.saturating_add(FRAME_MS as u64);
-        let _ = receive_responses();
-        print_runtime_logs();
-        std::thread::sleep(Duration::from_millis(FRAME_MS as u64));
-    }
-
-    false
+    run_with_window_loop(
+        ctx.window_id,
+        FRAME_MS,
+        options.timeout,
+        |t| {
+            let updates = vec![
+                EngineCmd::CmdModel3dUpsert(CmdModel3dUpsertArgs::Update(CmdModelUpdateArgs {
+                    realm_id: realm_3d,
+                    model_id: MODEL_GHOST_CUBE_ID,
+                    label: None,
+                    geometry_id: None,
+                    material_id: None,
+                    transform: Some(
+                        Mat4::from_translation(Vec3::new(
+                            -2.0 + (t * 2.4).sin() * 1.8,
+                            0.8 + (t * 3.0).sin() * 0.28,
+                            0.0,
+                        )) * Mat4::from_rotation_y(t * 2.8)
+                            * Mat4::from_rotation_x(t * 1.7),
+                    ),
+                    layer_mask: None,
+                    active: None,
+                    cast_shadow: None,
+                    receive_shadow: None,
+                    cast_outline: None,
+                    outline_color: None,
+                })),
+                EngineCmd::CmdModel3dUpsert(CmdModel3dUpsertArgs::Update(CmdModelUpdateArgs {
+                    realm_id: realm_3d,
+                    model_id: MODEL_FRESNEL_CUBE_ID,
+                    label: None,
+                    geometry_id: None,
+                    material_id: None,
+                    transform: Some(
+                        Mat4::from_translation(Vec3::new(
+                            2.0 + (t * 2.0).sin() * 1.2,
+                            0.8 + (t * 2.6).sin() * 0.2,
+                            0.0,
+                        )) * Mat4::from_rotation_y(-(t * 2.2))
+                            * Mat4::from_rotation_x(t * 1.3),
+                    ),
+                    layer_mask: None,
+                    active: None,
+                    cast_shadow: None,
+                    receive_shadow: None,
+                    cast_outline: None,
+                    outline_color: None,
+                })),
+            ];
+            let _ = send_commands(updates);
+        },
+        print_runtime_logs,
+    )
 }
 
 fn build_scene(realm_id: u32) -> Vec<EngineCmd> {
@@ -294,6 +284,7 @@ fn fragment(input: FragmentInput) -> FragmentOutput {
             range: Some(24.0),
             spot_inner_outer: None,
             layer_mask: 1,
+            shadow_layer_mask: None,
             active: true,
             cast_shadow: true,
         })),
@@ -388,8 +379,8 @@ fn full_layout(z_index: i32) -> TargetLayerLayout {
     }
 }
 
-fn print_runtime_logs() {
-    for event in receive_events() {
+fn print_runtime_logs(events: Vec<EngineEvent>) {
+    for event in events {
         if let EngineEvent::Log(log) = event {
             println!("[runtime/{:?}][{}] {}", log.level, log.tag, log.message);
         }

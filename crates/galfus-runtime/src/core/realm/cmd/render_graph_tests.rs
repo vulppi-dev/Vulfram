@@ -6,7 +6,7 @@ use crate::core::render::graph::{
 };
 use crate::core::state::EngineState;
 use crate::core::system::SystemEvent;
-use galfus_realm_core::{RENDER_PASS_FORWARD, RENDER_PASS_PREPARE, RENDER_PASS_SHADOW};
+use galfus_realm_core::{RENDER_PASS_FORWARD, RENDER_PASS_PREPARE, RENDER_PASS_SHADOW_3D};
 use std::collections::HashMap;
 
 fn valid_graph(graph_name: &str, resource_name: &str) -> RenderGraphDesc {
@@ -14,7 +14,7 @@ fn valid_graph(graph_name: &str, resource_name: &str) -> RenderGraphDesc {
         graph_id: LogicalId::Str(graph_name.into()),
         nodes: vec![RenderGraphNode {
             node_id: LogicalId::Str(format!("{graph_name}-shadow")),
-            pass_id: RENDER_PASS_SHADOW.into(),
+            pass_id: RENDER_PASS_SHADOW_3D.into(),
             inputs: Vec::new(),
             outputs: vec![LogicalId::Str(resource_name.into())],
             require: Vec::new(),
@@ -135,7 +135,7 @@ fn render_graph_upsert_and_list_includes_desc_hash_and_passes() {
     assert_eq!(entry.desc_hash, expected_hash);
     assert_eq!(entry.graph_kind, "3d");
     assert_eq!(entry.pass_count, 1);
-    assert_eq!(entry.pass_ids, vec![RENDER_PASS_SHADOW.to_string()]);
+    assert_eq!(entry.pass_ids, vec![RENDER_PASS_SHADOW_3D.to_string()]);
     assert_eq!(entry.bound_realm_ids, Vec::<u32>::new());
     assert_eq!(
         engine
@@ -519,4 +519,98 @@ fn render_graph_list_reports_bound_realms() {
         .find(|entry| entry.render_graph_id == 108)
         .expect("custom graph must be listed");
     assert_eq!(entry.bound_realm_ids, vec![realm_a, realm_b]);
+}
+
+#[test]
+fn twod_definition_lifecycle_and_instance_contracts_are_enforced() {
+    let mut engine = EngineState::new();
+    let twod_realm_id = create_realm(&mut engine, RealmKindDto::TwoD);
+    let threed_realm_id = create_realm(&mut engine, RealmKindDto::ThreeD);
+
+    let upsert = engine_cmd_render_graph_upsert(
+        &mut engine,
+        &CmdRenderGraphUpsertArgs {
+            render_graph_id: 120,
+            graph: realm2d_only_graph("custom_2d_lifecycle", "swapchain_2d_lifecycle"),
+        },
+    );
+    assert!(
+        upsert.success,
+        "2D definition upsert failed: {}",
+        upsert.message
+    );
+
+    let listed = engine_cmd_render_graph_list(&mut engine, &CmdRenderGraphListArgs::default());
+    let entry = listed
+        .render_graphs
+        .iter()
+        .find(|item| item.render_graph_id == 120)
+        .expect("2D graph entry must exist");
+    assert_eq!(entry.graph_kind, "2d");
+    assert_eq!(entry.bound_realm_ids, Vec::<u32>::new());
+
+    let twod_bind = engine_cmd_realm_render_graph_bind(
+        &mut engine,
+        &CmdRealmRenderGraphBindArgs {
+            realm_id: twod_realm_id,
+            render_graph_id: 120,
+        },
+    );
+    assert!(
+        twod_bind.success,
+        "TwoD realm should bind 2D graph: {}",
+        twod_bind.message
+    );
+
+    let threed_bind = engine_cmd_realm_render_graph_bind(
+        &mut engine,
+        &CmdRealmRenderGraphBindArgs {
+            realm_id: threed_realm_id,
+            render_graph_id: 120,
+        },
+    );
+    assert!(!threed_bind.success);
+    assert!(
+        threed_bind.message.contains("not found in 3d registry"),
+        "unexpected message: {}",
+        threed_bind.message
+    );
+
+    let dispose_bound = engine_cmd_render_graph_dispose(
+        &mut engine,
+        &CmdRenderGraphDisposeArgs {
+            render_graph_id: 120,
+        },
+    );
+    assert!(!dispose_bound.success);
+    assert!(
+        dispose_bound.message.contains("bound to realms"),
+        "unexpected dispose error: {}",
+        dispose_bound.message
+    );
+
+    let unbind_to_default = engine_cmd_realm_render_graph_bind(
+        &mut engine,
+        &CmdRealmRenderGraphBindArgs {
+            realm_id: twod_realm_id,
+            render_graph_id: crate::core::render::graph::DEFAULT_2D_RENDER_GRAPH_ID,
+        },
+    );
+    assert!(
+        unbind_to_default.success,
+        "unbind to default 2D graph failed: {}",
+        unbind_to_default.message
+    );
+
+    let dispose_unbound = engine_cmd_render_graph_dispose(
+        &mut engine,
+        &CmdRenderGraphDisposeArgs {
+            render_graph_id: 120,
+        },
+    );
+    assert!(
+        dispose_unbound.success,
+        "dispose after unbind should succeed: {}",
+        dispose_unbound.message
+    );
 }

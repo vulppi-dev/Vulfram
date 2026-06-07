@@ -76,7 +76,7 @@ impl RenderState {
             check_pool("light_params", light_system.light_params.version());
         }
 
-        if let Some(shadow_manager) = self.shadow.as_ref() {
+        if let Some(shadow_manager) = self.shadow_3d.as_ref() {
             check_pool("shadow_params", shadow_manager.params_pool.version());
             check_pool("shadow_page_table", shadow_manager.page_table.version());
             check_pool("shadow_point_vp", shadow_manager.point_light_vp.version());
@@ -116,7 +116,7 @@ impl RenderState {
             if record.is_dirty {
                 bindings.model_pool.write(*id, &record.data);
                 record.clear_dirty();
-                if let Some(shadow) = self.shadow.as_mut() {
+                if let Some(shadow) = self.shadow_3d.as_mut() {
                     shadow.mark_dirty();
                 }
             }

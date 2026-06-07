@@ -7,6 +7,49 @@ use crate::core::resources::common::mark_realm_windows_dirty;
 use crate::core::state::EngineState;
 use crate::core::system::push_error_event;
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Realm2dShadowConfig {
+    pub shadow_contact_offset: f32,
+    pub shadow_debug_light_index: i32,
+    pub shadow_debug_mode: i32,
+    pub ambient: f32,
+    pub light_radius: f32,
+    pub max_shadow_updates_per_frame: u32,
+    pub angular_resolution: u32,
+    pub map_resolution: u32,
+}
+
+impl Default for Realm2dShadowConfig {
+    fn default() -> Self {
+        Self {
+            shadow_contact_offset: 0.0,
+            shadow_debug_light_index: -1,
+            shadow_debug_mode: 0,
+            ambient: 0.06,
+            light_radius: 0.25,
+            max_shadow_updates_per_frame: 16,
+            angular_resolution: 1024,
+            map_resolution: 512,
+        }
+    }
+}
+
+impl Realm2dShadowConfig {
+    pub fn sanitized(self) -> Self {
+        Self {
+            shadow_contact_offset: self.shadow_contact_offset.max(0.0),
+            shadow_debug_light_index: self.shadow_debug_light_index.max(-1),
+            shadow_debug_mode: self.shadow_debug_mode.clamp(0, 1),
+            ambient: self.ambient.max(0.0),
+            light_radius: self.light_radius.max(0.01),
+            max_shadow_updates_per_frame: self.max_shadow_updates_per_frame.clamp(1, 64),
+            angular_resolution: self.angular_resolution.clamp(128, 4096),
+            map_resolution: self.map_resolution.clamp(64, 2048),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Camera2dRecord {
     pub label: Option<String>,
@@ -24,6 +67,11 @@ pub struct Sprite2dRecord {
     pub geometry_id: u32,
     pub material_id: Option<u32>,
     pub layer: i32,
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
+    pub occluder_only: bool,
+    pub shadow_height: f32,
+    pub shadow_layer_mask: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +81,11 @@ pub struct Shape2dRecord {
     pub geometry_id: u32,
     pub material_id: Option<u32>,
     pub layer: i32,
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
+    pub occluder_only: bool,
+    pub shadow_height: f32,
+    pub shadow_layer_mask: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -90,6 +143,16 @@ pub struct CmdSprite2dCreateArgs {
     pub material_id: Option<u32>,
     #[serde(default)]
     pub layer: i32,
+    #[serde(default = "crate::core::resources::common::default_true")]
+    pub cast_shadow: bool,
+    #[serde(default = "crate::core::resources::common::default_true")]
+    pub receive_shadow: bool,
+    #[serde(default)]
+    pub occluder_only: bool,
+    #[serde(default = "default_shadow_height")]
+    pub shadow_height: f32,
+    #[serde(default = "default_shadow_layer_mask")]
+    pub shadow_layer_mask: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -103,6 +166,11 @@ pub struct CmdSprite2dUpdateArgs {
     #[serde(default)]
     pub material_id: Option<u32>,
     pub layer: Option<i32>,
+    pub cast_shadow: Option<bool>,
+    pub receive_shadow: Option<bool>,
+    pub occluder_only: Option<bool>,
+    pub shadow_height: Option<f32>,
+    pub shadow_layer_mask: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -131,6 +199,16 @@ pub struct CmdShape2dCreateArgs {
     pub material_id: Option<u32>,
     #[serde(default)]
     pub layer: i32,
+    #[serde(default = "crate::core::resources::common::default_true")]
+    pub cast_shadow: bool,
+    #[serde(default = "crate::core::resources::common::default_true")]
+    pub receive_shadow: bool,
+    #[serde(default)]
+    pub occluder_only: bool,
+    #[serde(default = "default_shadow_height")]
+    pub shadow_height: f32,
+    #[serde(default = "default_shadow_layer_mask")]
+    pub shadow_layer_mask: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -144,6 +222,11 @@ pub struct CmdShape2dUpdateArgs {
     #[serde(default)]
     pub material_id: Option<u32>,
     pub layer: Option<i32>,
+    pub cast_shadow: Option<bool>,
+    pub receive_shadow: Option<bool>,
+    pub occluder_only: Option<bool>,
+    pub shadow_height: Option<f32>,
+    pub shadow_layer_mask: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -158,6 +241,20 @@ pub enum CmdShape2dUpsertArgs {
 pub struct CmdShape2dDisposeArgs {
     pub realm_id: u32,
     pub shape_id: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CmdRealm2dShadowConfigUpdateArgs {
+    pub realm_id: u32,
+    pub shadow_contact_offset: Option<f32>,
+    pub shadow_debug_light_index: Option<i32>,
+    pub shadow_debug_mode: Option<i32>,
+    pub ambient: Option<f32>,
+    pub light_radius: Option<f32>,
+    pub max_shadow_updates_per_frame: Option<u32>,
+    pub angular_resolution: Option<u32>,
+    pub map_resolution: Option<u32>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -180,6 +277,18 @@ fn default_ortho_scale() -> f32 {
 
 fn default_layer_mask() -> u32 {
     1
+}
+
+fn default_shadow_height() -> f32 {
+    1.0
+}
+
+fn default_shadow_layer_mask() -> u32 {
+    u32::MAX
+}
+
+fn default_realm2d_shadow_config() -> Realm2dShadowConfig {
+    Realm2dShadowConfig::default()
 }
 
 fn ensure_realm_is_2d(
@@ -446,6 +555,11 @@ pub fn engine_cmd_sprite2d_upsert(
                     geometry_id: create.geometry_id,
                     material_id: create.material_id,
                     layer: create.layer,
+                    cast_shadow: create.cast_shadow,
+                    receive_shadow: create.receive_shadow,
+                    occluder_only: create.occluder_only,
+                    shadow_height: create.shadow_height.max(0.0),
+                    shadow_layer_mask: create.shadow_layer_mask,
                 },
             );
             mark_realm_windows_dirty(engine, create.realm_id);
@@ -510,6 +624,21 @@ pub fn engine_cmd_sprite2d_upsert(
             }
             if let Some(layer) = update.layer {
                 record.layer = layer;
+            }
+            if let Some(cast_shadow) = update.cast_shadow {
+                record.cast_shadow = cast_shadow;
+            }
+            if let Some(receive_shadow) = update.receive_shadow {
+                record.receive_shadow = receive_shadow;
+            }
+            if let Some(occluder_only) = update.occluder_only {
+                record.occluder_only = occluder_only;
+            }
+            if let Some(shadow_height) = update.shadow_height {
+                record.shadow_height = shadow_height.max(0.0);
+            }
+            if let Some(shadow_layer_mask) = update.shadow_layer_mask {
+                record.shadow_layer_mask = shadow_layer_mask;
             }
             mark_realm_windows_dirty(engine, update.realm_id);
             CmdResultTwoDUpsert {
@@ -608,6 +737,11 @@ pub fn engine_cmd_shape2d_upsert(
                     geometry_id: create.geometry_id,
                     material_id: create.material_id,
                     layer: create.layer,
+                    cast_shadow: create.cast_shadow,
+                    receive_shadow: create.receive_shadow,
+                    occluder_only: create.occluder_only,
+                    shadow_height: create.shadow_height.max(0.0),
+                    shadow_layer_mask: create.shadow_layer_mask,
                 },
             );
             mark_realm_windows_dirty(engine, create.realm_id);
@@ -673,6 +807,21 @@ pub fn engine_cmd_shape2d_upsert(
             if let Some(layer) = update.layer {
                 record.layer = layer;
             }
+            if let Some(cast_shadow) = update.cast_shadow {
+                record.cast_shadow = cast_shadow;
+            }
+            if let Some(receive_shadow) = update.receive_shadow {
+                record.receive_shadow = receive_shadow;
+            }
+            if let Some(occluder_only) = update.occluder_only {
+                record.occluder_only = occluder_only;
+            }
+            if let Some(shadow_height) = update.shadow_height {
+                record.shadow_height = shadow_height.max(0.0);
+            }
+            if let Some(shadow_layer_mask) = update.shadow_layer_mask {
+                record.shadow_layer_mask = shadow_layer_mask;
+            }
             mark_realm_windows_dirty(engine, update.realm_id);
             CmdResultTwoDUpsert {
                 success: true,
@@ -721,6 +870,67 @@ pub fn engine_cmd_shape2d_dispose(
     CmdResultTwoDDispose {
         success: true,
         message: "Shape2D disposed successfully".to_string(),
+    }
+}
+
+pub fn engine_cmd_realm2d_shadow_config_update(
+    engine: &mut EngineState,
+    args: &CmdRealm2dShadowConfigUpdateArgs,
+) -> CmdResultTwoDUpsert {
+    if let Err(message) = validate_host_logical_id(args.realm_id, "realmId") {
+        return upsert_error(
+            engine,
+            "realm2d-shadow-config",
+            "realm2d-shadow-config-update",
+            message,
+        );
+    }
+    let realm_id = RealmId(args.realm_id);
+    if let Err(message) = ensure_realm_is_2d(engine, realm_id, "realm2d-shadow-config-update") {
+        return upsert_error(
+            engine,
+            "realm2d-shadow-config",
+            "realm2d-shadow-config-update",
+            message,
+        );
+    }
+
+    let current = engine
+        .universal_state
+        .scene
+        .realm2d_shadow_configs
+        .get(&realm_id)
+        .copied()
+        .unwrap_or_else(default_realm2d_shadow_config);
+    let next = Realm2dShadowConfig {
+        shadow_contact_offset: args
+            .shadow_contact_offset
+            .unwrap_or(current.shadow_contact_offset),
+        shadow_debug_light_index: args
+            .shadow_debug_light_index
+            .unwrap_or(current.shadow_debug_light_index),
+        shadow_debug_mode: args.shadow_debug_mode.unwrap_or(current.shadow_debug_mode),
+        ambient: args.ambient.unwrap_or(current.ambient),
+        light_radius: args.light_radius.unwrap_or(current.light_radius),
+        max_shadow_updates_per_frame: args
+            .max_shadow_updates_per_frame
+            .unwrap_or(current.max_shadow_updates_per_frame),
+        angular_resolution: args
+            .angular_resolution
+            .or(args.map_resolution)
+            .unwrap_or(current.angular_resolution),
+        map_resolution: args.map_resolution.unwrap_or(current.map_resolution),
+    }
+    .sanitized();
+    engine
+        .universal_state
+        .scene
+        .realm2d_shadow_configs
+        .insert(realm_id, next);
+    mark_realm_windows_dirty(engine, args.realm_id);
+    CmdResultTwoDUpsert {
+        success: true,
+        message: "Realm2D shadow config updated successfully".to_string(),
     }
 }
 
@@ -810,6 +1020,11 @@ mod tests {
                 geometry_id: 100,
                 material_id: Some(200),
                 layer: 0,
+                cast_shadow: true,
+                receive_shadow: true,
+                occluder_only: false,
+                shadow_height: 1.0,
+                shadow_layer_mask: u32::MAX,
             }),
         );
         assert!(!result.success);

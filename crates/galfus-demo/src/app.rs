@@ -11,18 +11,19 @@ pub fn run() {
 
     assert_eq!(galfus_core::core::galfus_init(), GalfusResult::Success);
 
-    let demo_kind = select_demo();
+    let selection = select_demo();
     let window_id: u32 = 1;
 
-    let title = demo_kind.title();
+    let title = selection.demo.title();
     let binding = create_window(window_id, &title);
 
     let close_sent = run_demo(
-        demo_kind,
+        selection.demo,
         DemoContext {
             window_id,
             realm_id: binding.realm_id,
         },
+        selection.options,
     );
 
     if !close_sent {

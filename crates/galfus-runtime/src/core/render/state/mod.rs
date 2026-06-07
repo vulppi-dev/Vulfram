@@ -11,11 +11,13 @@ pub mod skinning;
 use crate::core::render::cache::RenderCache;
 use crate::core::render::gizmos::GizmoSystem;
 use crate::core::resources::VertexAllocatorSystem;
-use crate::core::resources::shadow::ShadowManager;
+use crate::core::resources::shadow::ShadowManager3d;
+use crate::core::resources::shadow2d::ShadowManager2d;
 use crate::core::resources::{
     Camera2dRecord, CameraNode, EnvironmentConfig, ForwardAtlasEntry, GeometryPrimitiveType,
     LightRecord, MaterialDefinitionRecord, MaterialInstanceRecord, ModelRecord,
-    ShaderMaterialRecord, Shape2dRecord, Sprite2dRecord, TargetTextureBinding, TextureRecord,
+    Realm2dShadowConfig, ShaderMaterialRecord, Shape2dRecord, Sprite2dRecord, TargetTextureBinding,
+    TextureRecord,
 };
 
 pub use self::binding::BindingSystem;
@@ -39,6 +41,7 @@ pub type Realm3dState = galfus_realm_3d::Realm3dState<
 >;
 pub type Realm2dState = galfus_realm_2d::Realm2dState<
     Camera2dRecord,
+    LightRecord,
     Sprite2dRecord,
     Shape2dRecord,
     ShaderMaterialRecord,
@@ -47,14 +50,34 @@ pub type Realm2dState = galfus_realm_2d::Realm2dState<
 #[derive(Debug, Default, Clone)]
 pub struct TwoDSourceState {
     pub cameras: std::collections::HashMap<u32, Camera2dRecord>,
+    pub lights: std::collections::HashMap<u32, LightRecord>,
     pub sprites: std::collections::HashMap<u32, Sprite2dRecord>,
     pub shapes: std::collections::HashMap<u32, Shape2dRecord>,
+    pub shadow_config: Realm2dShadowConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TwoDItemKind {
     Sprite,
     Shape,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TwoDOccluderSourceKind {
+    Sprite,
+    Shape,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TwoDOccluderEdge {
+    pub a: glam::Vec2,
+    pub b: glam::Vec2,
+}
+
+#[derive(Debug, Clone)]
+pub struct TwoDOccluderSilhouette {
+    pub vertices: [glam::Vec2; 4],
+    pub edges: [TwoDOccluderEdge; 4],
 }
 
 #[derive(Debug, Clone)]
@@ -75,12 +98,29 @@ pub struct TwoDPreparedItem {
     pub geometry_id: u32,
     pub material_id: Option<u32>,
     pub layer: i32,
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
+    pub occluder_only: bool,
+    pub shadow_height: f32,
+    pub shadow_layer_mask: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct TwoDPreparedOccluder {
+    pub occluder_id: u32,
+    pub source_kind: TwoDOccluderSourceKind,
+    pub transform: glam::Mat4,
+    pub silhouette: TwoDOccluderSilhouette,
+    pub layer: i32,
+    pub shadow_height: f32,
+    pub shadow_layer_mask: u32,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct TwoDPreparedState {
     pub cameras: Vec<TwoDPreparedCamera>,
     pub items: Vec<TwoDPreparedItem>,
+    pub occluders: Vec<TwoDPreparedOccluder>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -113,21 +153,19 @@ pub struct SampledTargetBindKey {
     pub uniform_buffer_ptr: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TwoDTextureBindKey {
-    pub texture_view_ptr: usize,
-    pub sampler_ptr: usize,
-}
-
 pub struct TwoDPassResources {
-    pub camera_bind_group_layout: wgpu::BindGroupLayout,
-    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub global_bind_group_layout: wgpu::BindGroupLayout,
     pub pipeline_layout: wgpu::PipelineLayout,
     pub camera_dynamic_buffer: wgpu::Buffer,
-    pub camera_dynamic_bind_group: wgpu::BindGroup,
+    pub light_storage_buffer: wgpu::Buffer,
+    pub shadow_sample_buffer: wgpu::Buffer,
+    pub global_bind_group: wgpu::BindGroup,
     pub camera_dynamic_stride: u64,
     pub camera_dynamic_capacity_slots: usize,
-    pub fallback_tex_view: wgpu::TextureView,
+    pub light_capacity_slots: usize,
+    pub fallback_depth_view: wgpu::TextureView,
+    pub shadow_mask_size: glam::UVec2,
+    pub shadow_sample_capacity: usize,
 }
 
 #[derive(Debug, Default)]
@@ -141,6 +179,8 @@ pub struct RenderResourceState {
 pub struct SceneRuntimeState {
     pub realm3d: Realm3dState,
     pub realm2d: Realm2dState,
+    pub realm2d_shadow_configs:
+        std::collections::HashMap<crate::core::realm::RealmId, Realm2dShadowConfig>,
     pub render_resources: RenderResourceState,
     pub material_definitions: std::collections::HashMap<u32, MaterialDefinitionRecord>,
     pub material_instances: std::collections::HashMap<u32, MaterialInstanceRecord>,
@@ -178,7 +218,8 @@ pub struct RenderState {
     pub vertex: Option<VertexAllocatorSystem>,
     pub light_system: Option<LightCullingSystem>,
     pub gizmos: GizmoSystem,
-    pub shadow: Option<ShadowManager>,
+    pub shadow_3d: Option<ShadowManager3d>,
+    pub shadow_2d: Option<ShadowManager2d>,
     pub cache: RenderCache,
     pub material_shader_modules: std::collections::HashMap<u64, wgpu::ShaderModule>,
     pub custom_screen_param_buffer: Option<wgpu::Buffer>,
@@ -195,7 +236,6 @@ pub struct RenderState {
     pub camera_environment_overrides: std::collections::HashMap<u32, EnvironmentConfig>,
     pub compose_bind_cache: std::collections::HashMap<SampledTargetBindKey, wgpu::BindGroup>,
     pub post_bind_cache: std::collections::HashMap<SampledTargetBindKey, wgpu::BindGroup>,
-    pub two_d_texture_bind_cache: std::collections::HashMap<TwoDTextureBindKey, wgpu::BindGroup>,
     pub two_d_pass_resources: Option<TwoDPassResources>,
     pub compose_bind_cache_hits: u32,
     pub compose_bind_cache_misses: u32,
@@ -335,7 +375,7 @@ impl RenderState {
                     .unwrap_or(0),
             )
             .saturating_add(
-                self.shadow
+                self.shadow_3d
                     .as_ref()
                     .map(Self::shadow_manager_gpu_bytes)
                     .unwrap_or(0),
@@ -409,7 +449,7 @@ impl RenderState {
     }
 
     fn shadow_manager_gpu_bytes(
-        shadow_manager: &crate::core::resources::shadow::ShadowManager,
+        shadow_manager: &crate::core::resources::shadow::ShadowManager3d,
     ) -> u64 {
         shadow_manager
             .atlas

@@ -9,23 +9,23 @@ use crate::{
 };
 use galfus_realm_core::{
     RENDER_PASS_COMPOSE, RENDER_PASS_CUSTOM_POST_FORWARD, RENDER_PASS_CUSTOM_PRE_FORWARD,
-    RENDER_PASS_FORWARD, RENDER_PASS_SHADOW,
+    RENDER_PASS_FORWARD, RENDER_PASS_SHADOW_3D,
 };
 
 #[test]
 fn threed_realm_accepts_full_pipeline_passes() {
-    assert!(supports_render_pass(RENDER_PASS_SHADOW));
+    assert!(supports_render_pass(RENDER_PASS_SHADOW_3D));
     assert!(supports_render_pass(RENDER_PASS_CUSTOM_PRE_FORWARD));
     assert!(supports_render_pass(RENDER_PASS_CUSTOM_POST_FORWARD));
     assert!(!supports_render_pass("unknown"));
     assert!(graph_is_compatible([
-        RENDER_PASS_SHADOW,
+        RENDER_PASS_SHADOW_3D,
         RENDER_PASS_CUSTOM_PRE_FORWARD,
         RENDER_PASS_FORWARD,
         RENDER_PASS_CUSTOM_POST_FORWARD,
         RENDER_PASS_COMPOSE,
     ]));
-    assert!(!graph_is_compatible([RENDER_PASS_SHADOW, "unknown"]));
+    assert!(!graph_is_compatible([RENDER_PASS_SHADOW_3D, "unknown"]));
 }
 
 #[test]
@@ -51,10 +51,10 @@ fn atlas_hash_changes_with_uv_scale_bias() {
         id: 1,
         label: Some("atlas".into()),
         layer: 0,
-        uv_scale_bias: [1.0, 1.0, 0.0, 0.0],
+        uv_scale_bias: [1.0, 1.0, 0.0, 0.0].into(),
     }];
     let b = vec![ForwardAtlasEntryMeta {
-        uv_scale_bias: [0.5, 1.0, 0.0, 0.0],
+        uv_scale_bias: [0.5, 1.0, 0.0, 0.0].into(),
         ..a[0].clone()
     }];
     assert_ne!(
@@ -131,13 +131,13 @@ fn atlas_sync_plan_marks_changed_entries() {
         id: 1,
         label: Some("atlas".into()),
         layer: 0,
-        uv_scale_bias: [1.0, 1.0, 0.0, 0.0],
+        uv_scale_bias: [1.0, 1.0, 0.0, 0.0].into(),
     }];
     let next = vec![ForwardAtlasEntryMeta {
         id: 1,
         label: Some("atlas".into()),
         layer: 1,
-        uv_scale_bias: [1.0, 1.0, 0.0, 0.0],
+        uv_scale_bias: [1.0, 1.0, 0.0, 0.0].into(),
     }];
 
     assert_eq!(
@@ -211,10 +211,10 @@ fn camera_projection_plan_detects_preserve_vs_reset() {
     assert_eq!(
         plan_camera_projection_update(
             [1, 0],
-            [0.1, 100.0],
+            [0.1, 100.0].into(),
             1.0,
             [1, 0],
-            [0.1, 100.0],
+            [0.1, 100.0].into(),
             1.0,
             [1280, 720],
         ),
@@ -226,10 +226,10 @@ fn camera_projection_plan_detects_preserve_vs_reset() {
     assert_eq!(
         plan_camera_projection_update(
             [1, 0],
-            [0.1, 100.0],
+            [0.1, 100.0].into(),
             1.0,
             [2, 0],
-            [0.1, 100.0],
+            [0.1, 100.0].into(),
             1.0,
             [1280, 720],
         ),
@@ -244,13 +244,14 @@ fn camera_projection_plan_detects_preserve_vs_reset() {
 fn entity_and_material_change_detectors_compare_semantic_fields() {
     let model = ModelRecordMeta {
         transform: [0.0; 16],
-        translation: [0.0; 4],
-        rotation: [0.0; 4],
-        scale: [1.0, 1.0, 1.0, 0.0],
+        translation: [0.0; 4].into(),
+        rotation: [0.0; 4].into(),
+        scale: [1.0, 1.0, 1.0, 0.0].into(),
         flags: [0; 4],
-        outline_color: [1.0, 0.0, 0.0, 1.0],
+        outline_color: [1.0, 0.0, 0.0, 1.0].into(),
         geometry_id: 1,
         material_id: Some(2),
+        active: true,
         layer_mask: 3,
         cast_shadow: true,
         receive_shadow: true,
@@ -270,17 +271,19 @@ fn entity_and_material_change_detectors_compare_semantic_fields() {
     );
 
     let light = LightRecordMeta {
-        position: [0.0; 4],
-        direction: [0.0; 4],
-        color: [1.0; 4],
-        ground_color: [0.0; 4],
+        position: [0.0; 4].into(),
+        direction: [0.0; 4].into(),
+        color: [1.0; 4].into(),
+        ground_color: [0.0; 4].into(),
         view: [0.0; 16],
         projection: [0.0; 16],
         view_projection: [0.0; 16],
-        intensity_range: [1.0, 10.0],
-        spot_inner_outer: [0.0, 0.0],
+        intensity_range: [1.0, 10.0].into(),
+        spot_inner_outer: [0.0, 0.0].into(),
         kind_flags: [0, 0],
+        active: true,
         layer_mask: 1,
+        shadow_layer_mask: u32::MAX,
         cast_shadow: false,
     };
     let changed_light = LightRecordMeta {

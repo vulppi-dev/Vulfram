@@ -4,17 +4,46 @@ use crate::core::resources::geometry::Frustum;
 use crate::core::resources::{CameraComponent, VertexStream};
 use glam::Vec4Swizzles;
 
-pub fn pass_shadow_update(
+pub fn pass_shadow_3d_update(
+    render_state: &mut RenderState,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_index: u64,
+) {
+    pass_shadow_update_impl(render_state, device, queue, encoder, frame_index);
+}
+
+pub fn pass_shadow_2d_update(
+    render_state: &mut RenderState,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_index: u64,
+    target_size: glam::UVec2,
+) {
+    crate::core::render::passes::two_d::pass_2d_shadow_masks_update(
+        render_state,
+        device,
+        queue,
+        encoder,
+        frame_index,
+        target_size,
+    );
+}
+
+fn pass_shadow_update_impl(
     render_state: &mut RenderState,
     device: &wgpu::Device,
     _queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
     frame_index: u64,
 ) {
-    let shadow_manager = match render_state.shadow.as_mut() {
+    let shadow_manager = match render_state.shadow_3d.as_mut() {
         Some(s) => s,
         None => return,
     };
+    shadow_manager.set_realm_point_vp_base(0);
 
     // If the manager is dirty, it means something in the scene changed (light or model).
     // We must mark all currently cached pages as dirty so they get re-rendered if used.
@@ -42,12 +71,16 @@ pub fn pass_shadow_update(
     let cache = &mut render_state.cache;
 
     // 1. Identify which pages need update for each light
-    let primary_camera = match render_state.scene.cameras.values().next() {
-        Some(c) => c,
-        None => return,
-    };
-
-    let camera_inv_view_proj = primary_camera.data.view_projection.inverse();
+    let primary_camera_inv = render_state
+        .scene
+        .cameras
+        .values()
+        .next()
+        .map(|camera| camera.data.view_projection.inverse());
+    if primary_camera_inv.is_none() {
+        return;
+    }
+    let camera_inv_view_proj = primary_camera_inv.unwrap_or(glam::Mat4::IDENTITY);
 
     // Collect pages (re-render on dirty scenes)
     let mut pages_to_render = Vec::new();
@@ -113,12 +146,16 @@ pub fn pass_shadow_update(
             .enumerate()
         {
             let light_view_proj = light_proj * light_view;
-            if light_record.data.kind_flags.x == 1 {
-                let vp_index = shadow_light_id * 6 + face_index as u32;
-                shadow_manager
-                    .point_light_vp
-                    .write(vp_index, &light_view_proj);
-            }
+            let vp_face = if light_record.data.kind_flags.x == 1 {
+                face_index as u32
+            } else {
+                0
+            };
+            let vp_index = shadow_light_id * 6 + vp_face;
+            let realm_tag = 0;
+            shadow_manager
+                .point_light_vp
+                .write(vp_index, &light_view_proj);
 
             // For point lights (kind=1), always render all pages for all 6 faces
             // For other lights, identify pages based on camera frustum
@@ -139,6 +176,7 @@ pub fn pass_shadow_update(
 
             for (x, y) in required {
                 if let Some(handle) = shadow_manager.request_page(
+                    realm_tag,
                     shadow_light_id,
                     face_index as u32,
                     x,
@@ -146,6 +184,7 @@ pub fn pass_shadow_update(
                     frame_index,
                 ) {
                     let key = crate::core::resources::shadow::ShadowPageKey {
+                        realm_tag,
                         light_id: shadow_light_id,
                         face: face_index as u32,
                         x,
@@ -168,7 +207,7 @@ pub fn pass_shadow_update(
         }
     }
 
-    shadow_manager.prune_inactive_dense_lights(shadow_counter);
+    shadow_manager.prune_inactive_dense_lights(0, shadow_counter);
 
     if pages_to_render.is_empty() {
         return;
@@ -233,7 +272,7 @@ pub fn pass_shadow_update(
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &atlas_layer_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0.0), // Reverse Z clear value
+                    load: wgpu::LoadOp::Clear(0.0),
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -409,8 +448,6 @@ pub fn pass_shadow_update(
                     continue;
                 }
 
-                // Point-light shadow pages are cubemap-face projections and are
-                // prone to over-aggressive AABB culling at face/page edges.
                 if !page.is_point
                     && let Some(aabb) = vertex_sys.aabb(model_record.geometry_id)
                 {

@@ -15,13 +15,14 @@ const SHADOW_CONFIG = {
 } as const;
 
 type DemoUpdate = (dtSeconds: number) => void;
-type DemoId = '001' | '002' | '003';
+type DemoId = '001' | '002' | '003' | '004';
 
 function getDemoId(): DemoId {
   const hash = window.location.hash.replace('#', '');
   const normalized = hash.startsWith('demo-') ? hash.replace('demo-', '') : hash;
   if (normalized === '002') return '002';
   if (normalized === '003') return '003';
+  if (normalized === '004') return '004';
   return '001';
 }
 
@@ -34,7 +35,7 @@ function createMountedWorld(demoId: DemoId): { world3dId?: World3DId; world2dId?
     canvasId: 'galfus-canvas'
   });
 
-  if (demoId === '003') {
+  if (demoId === '003' || demoId === '004') {
     const world2dId = World2D.create2DWorld();
     Mount.mountWorld(world2dId, { target: { kind: 'window', windowId } });
     return { world2dId };
@@ -338,6 +339,96 @@ function setupDemo003(worldId: World2DId): DemoUpdate {
   };
 }
 
+function setupDemo004(worldId: World2DId): DemoUpdate {
+  const lightWorldId = worldId as unknown as World3DId;
+  const quad = World2D.create2DGeometry(worldId, { type: 'primitive', shape: 'plane' });
+  const receiver = World2D.create2DMaterial(worldId, {
+    kind: 'standard',
+    options: { type: 'schema', content: { baseColor: [0.22, 0.45, 0.96, 1.0] } }
+  });
+  const caster = World2D.create2DMaterial(worldId, {
+    kind: 'standard',
+    options: { type: 'schema', content: { baseColor: [0.95, 0.33, 0.22, 1.0] } }
+  });
+  const floor = World2D.create2DMaterial(worldId, {
+    kind: 'standard',
+    options: { type: 'schema', content: { baseColor: [0.16, 0.16, 0.2, 1.0] } }
+  });
+
+  const camera = World2D.create2DEntity(worldId);
+  World2D.update2DTransform(worldId, camera, { position: [0, 0, 5] });
+  World2D.create2DCamera(worldId, camera, {
+    kind: 'orthographic',
+    near: 0.01,
+    far: 100,
+    orthoScale: 2.8,
+    order: 0
+  });
+
+  const floorEntity = World2D.create2DEntity(worldId);
+  World2D.update2DTransform(worldId, floorEntity, { position: [0, -1.45, 0], scale: [4.5, 0.5, 1] });
+  World2D.create2DShape(worldId, floorEntity, { geometryId: quad, materialId: floor, layer: 0 });
+
+  const receiverA = World2D.create2DEntity(worldId);
+  const receiverB = World2D.create2DEntity(worldId);
+  const casterA = World2D.create2DEntity(worldId);
+  const casterB = World2D.create2DEntity(worldId);
+
+  World2D.update2DTransform(worldId, receiverA, { position: [-1.0, -0.1, 0], scale: [0.9, 0.9, 1] });
+  World2D.create2DSprite(worldId, receiverA, { geometryId: quad, materialId: receiver, layer: 1 });
+  World2D.update2DTransform(worldId, receiverB, { position: [1.1, 0.25, 0], scale: [0.8, 0.8, 1] });
+  World2D.create2DSprite(worldId, receiverB, { geometryId: quad, materialId: receiver, layer: 1 });
+  World2D.update2DTransform(worldId, casterA, { position: [-0.1, 0, 0], scale: [0.45, 1.6, 1] });
+  World2D.create2DShape(worldId, casterA, { geometryId: quad, materialId: caster, layer: 1 });
+  World2D.update2DTransform(worldId, casterB, { position: [0.55, -0.45, 0], scale: [0.5, 0.5, 1] });
+  World2D.create2DShape(worldId, casterB, { geometryId: quad, materialId: caster, layer: 1 });
+
+  const lightA = World2D.create2DEntity(worldId);
+  const lightB = World2D.create2DEntity(worldId);
+  World2D.update2DTransform(worldId, lightA, { position: [-1.8, 1.3, 0.6] });
+  World3D.create3DLight(lightWorldId, lightA, {
+    kind: 'point',
+    color: [0.25, 0.95, 1.0],
+    intensity: 2.4,
+    range: 5.5,
+    castShadow: true
+  });
+  World2D.update2DTransform(worldId, lightB, { position: [1.8, 1.0, 0.6] });
+  World3D.create3DLight(lightWorldId, lightB, {
+    kind: 'point',
+    color: [1.0, 0.45, 0.25],
+    intensity: 2.2,
+    range: 5.0,
+    castShadow: true
+  });
+
+  let t = 0;
+  return (dt) => {
+    t += dt;
+    const rotA = quat.fromEuler(quat.create(), 0, 0, t * 70);
+    const rotB = quat.fromEuler(quat.create(), 0, 0, -t * 95);
+
+    World2D.update2DTransform(worldId, casterA, {
+      position: [Math.cos(t * 0.8) * 0.35, Math.sin(t * 1.2) * 0.25, 0],
+      rotation: [rotA[0], rotA[1], rotA[2], rotA[3]],
+      scale: [0.45, 1.6, 1]
+    });
+    World2D.update2DTransform(worldId, casterB, {
+      position: [0.7 + Math.cos(t * 1.6) * 0.25, -0.45 + Math.sin(t * 1.9) * 0.2, 0],
+      rotation: [rotB[0], rotB[1], rotB[2], rotB[3]],
+      scale: [0.5, 0.5, 1]
+    });
+    World2D.update2DTransform(worldId, receiverA, {
+      position: [-1.0 + Math.sin(t * 0.9) * 0.2, -0.1, 0],
+      scale: [0.9, 0.9, 1]
+    });
+    World2D.update2DTransform(worldId, receiverB, {
+      position: [1.1 + Math.cos(t * 1.0) * 0.2, 0.25, 0],
+      scale: [0.8, 0.8, 1]
+    });
+  };
+}
+
 function startRenderLoop(update: DemoUpdate): void {
   let last = performance.now();
   let totalMs = 0;
@@ -359,7 +450,9 @@ async function main(): Promise<void> {
   const demoId = getDemoId();
   const mounted = createMountedWorld(demoId);
   let update: DemoUpdate;
-  if (demoId === '003') {
+  if (demoId === '004') {
+    update = setupDemo004(mounted.world2dId!);
+  } else if (demoId === '003') {
     update = setupDemo003(mounted.world2dId!);
   } else if (demoId === '002') {
     update = setupDemo002(mounted.world3dId!);

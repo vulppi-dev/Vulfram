@@ -7,7 +7,7 @@ use crate::{
 };
 use galfus_realm_core::{
     RENDER_PASS_BLOOM, RENDER_PASS_FORWARD, RENDER_PASS_LIGHT_CULL, RENDER_PASS_POST,
-    RENDER_PASS_SHADOW, RENDER_PASS_SKYBOX,
+    RENDER_PASS_SHADOW_3D, RENDER_PASS_SKYBOX,
 };
 
 fn id(name: &str) -> LogicalId {
@@ -83,7 +83,7 @@ fn rejects_multiple_writers_without_read_before_overwrite() {
     let desc = RenderGraphDesc {
         graph_id: id("g"),
         nodes: vec![
-            node(RENDER_PASS_SHADOW, "w0", vec![], vec![id("r")]),
+            node(RENDER_PASS_SHADOW_3D, "w0", vec![], vec![id("r")]),
             node(RENDER_PASS_POST, "w1", vec![], vec![id("r")]),
         ],
         edges: vec![RenderGraphEdge {

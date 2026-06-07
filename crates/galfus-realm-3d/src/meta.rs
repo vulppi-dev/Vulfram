@@ -71,6 +71,7 @@ pub struct LightRecordMeta {
     pub kind_flags: [u32; 2],
     pub active: bool,
     pub layer_mask: u32,
+    pub shadow_layer_mask: u32,
     pub cast_shadow: bool,
 }
 

@@ -78,7 +78,7 @@ function mergeCommandContent(
   previous: Record<string, unknown>,
   next: Record<string, unknown>
 ): Record<string, unknown> {
-  if (type === 'cmd-environment-upsert' || type === 'cmd-shadow-configure') {
+  if (type === 'cmd-environment-upsert' || type === 'cmd-shadow3d-configure') {
     return {
       ...previous,
       ...next,
@@ -187,7 +187,7 @@ function getMergeableCommandKey(envelope: { type: string; content: unknown }): s
       return `${envelope.type}:${environmentId}`;
     }
   }
-  if (envelope.type === 'cmd-shadow-configure') {
+  if (envelope.type === 'cmd-shadow3d-configure') {
     const windowId = content.windowId;
     if (typeof windowId === 'number') {
       return `${envelope.type}:${windowId}`;

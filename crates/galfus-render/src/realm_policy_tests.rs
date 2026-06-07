@@ -1,6 +1,6 @@
 use super::{clear_alpha_for_realm_kind, graph_is_compatible_with_realm_kind};
 use crate::{LogicalId, RenderGraphNode, RenderGraphPlan};
-use galfus_realm_core::{RENDER_PASS_PREPARE, RENDER_PASS_SHADOW, RealmKind};
+use galfus_realm_core::{RENDER_PASS_PREPARE, RENDER_PASS_SHADOW_3D, RealmKind};
 
 #[test]
 fn realm_policy_maps_clear_alpha_by_kind() {
@@ -26,8 +26,8 @@ fn realm_policy_validates_passes_by_kind() {
     };
     let threed_plan = RenderGraphPlan {
         nodes: vec![RenderGraphNode {
-            node_id: LogicalId::Str(RENDER_PASS_SHADOW.into()),
-            pass_id: RENDER_PASS_SHADOW.into(),
+            node_id: LogicalId::Str(RENDER_PASS_SHADOW_3D.into()),
+            pass_id: RENDER_PASS_SHADOW_3D.into(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             require: Vec::new(),

@@ -15,7 +15,7 @@ pub use cmd::*;
 /// Configuration for the Shadow Manager
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
-pub struct ShadowConfig {
+pub struct Shadow3dConfig {
     pub tile_resolution: u32,
     pub atlas_tiles_w: u32,
     pub atlas_tiles_h: u32,
@@ -25,7 +25,7 @@ pub struct ShadowConfig {
     pub normal_bias: f32,
 }
 
-impl Default for ShadowConfig {
+impl Default for Shadow3dConfig {
     fn default() -> Self {
         Self {
             tile_resolution: 2048,
@@ -46,17 +46,19 @@ pub struct ShadowParams {
     pub virtual_grid_size: f32,
     pub pcf_range: i32,
     pub table_capacity: u32,
+    pub point_vp_base: u32,
     pub bias_min: f32,
     pub bias_slope: f32,
     pub point_bias_min: f32,
     pub point_bias_slope: f32,
     pub normal_bias: f32,
-    pub _padding: [f32; 3],
+    pub _padding: [f32; 2],
 }
 
 /// Unique identifier for a virtual shadow page
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ShadowPageKey {
+    pub realm_tag: u32,
     pub light_id: u32,
     pub face: u32,
     pub x: u32,
@@ -94,7 +96,7 @@ impl Default for ShadowPageEntry {
 }
 
 /// Manages Virtual Shadow Maps paging and atlas allocation
-pub struct ShadowManager {
+pub struct ShadowManager3d {
     pub atlas: ShadowAtlasSystem,
     pub page_table: StorageBufferPool<ShadowPageEntry>,
     pub point_light_vp: StorageBufferPool<glam::Mat4>,
@@ -105,14 +107,33 @@ pub struct ShadowManager {
     // Virtual to Physical mapping
     pub cache: HashMap<ShadowPageKey, ShadowPageRecord>,
 
-    pub config: ShadowConfig,
+    pub config: Shadow3dConfig,
 }
 
-impl ShadowManager {
+impl ShadowManager3d {
     const MAX_IDLE_FRAMES: u64 = 600;
+    fn build_params(&self, point_vp_base: u32) -> ShadowParams {
+        ShadowParams {
+            virtual_grid_size: self.config.virtual_grid_size as f32,
+            pcf_range: self.config.smoothing as i32,
+            table_capacity: self.table_capacity,
+            point_vp_base,
+            bias_min: 0.00001,
+            bias_slope: 0.0001,
+            point_bias_min: 0.001,
+            point_bias_slope: 0.003,
+            normal_bias: self.config.normal_bias,
+            _padding: [0.0; 2],
+        }
+    }
+
+    pub fn set_realm_point_vp_base(&mut self, point_vp_base: u32) {
+        self.params_pool.write(0, &self.build_params(point_vp_base));
+    }
+
     #[cfg(any(not(target_arch = "wasm32"), target_arch = "wasm32"))]
     pub fn new(device: &Device, queue: &Queue, table_capacity: u32) -> Self {
-        let config = ShadowConfig::default();
+        let config = Shadow3dConfig::default();
         let atlas_desc = ShadowAtlasDesc {
             label: Some("Shadow Atlas"),
             format: TextureFormat::Depth32Float,
@@ -129,7 +150,7 @@ impl ShadowManager {
 
         let page_table =
             StorageBufferPool::new(device, queue, Some(table_capacity), storage_alignment);
-        let point_light_vp = StorageBufferPool::new(device, queue, Some(128), storage_alignment);
+        let point_light_vp = StorageBufferPool::new(device, queue, Some(4096), storage_alignment);
         let mut params_pool = UniformBufferPool::new(device, queue, Some(1), alignment);
 
         params_pool.write(
@@ -138,12 +159,13 @@ impl ShadowManager {
                 virtual_grid_size: config.virtual_grid_size as f32,
                 pcf_range: config.smoothing as i32,
                 table_capacity,
+                point_vp_base: 0,
                 bias_min: 0.00001, // Very small default for Reverse Z + Float32
                 bias_slope: 0.0001,
                 point_bias_min: 0.001,
                 point_bias_slope: 0.003,
                 normal_bias: config.normal_bias,
-                _padding: [0.0; 3],
+                _padding: [0.0; 2],
             },
         );
 
@@ -159,7 +181,7 @@ impl ShadowManager {
         }
     }
 
-    pub fn configure(&mut self, device: &Device, config: ShadowConfig) {
+    pub fn configure(&mut self, device: &Device, config: Shadow3dConfig) {
         let needs_atlas_rebuild = config.tile_resolution != self.config.tile_resolution
             || config.atlas_tiles_w != self.config.atlas_tiles_w
             || config.atlas_tiles_h != self.config.atlas_tiles_h
@@ -171,20 +193,7 @@ impl ShadowManager {
 
         self.config = config;
 
-        self.params_pool.write(
-            0,
-            &ShadowParams {
-                virtual_grid_size: config.virtual_grid_size as f32,
-                pcf_range: config.smoothing as i32,
-                table_capacity: self.table_capacity,
-                bias_min: 0.00001,
-                bias_slope: 0.0001,
-                point_bias_min: 0.001,
-                point_bias_slope: 0.003,
-                normal_bias: config.normal_bias,
-                _padding: [0.0; 3],
-            },
-        );
+        self.params_pool.write(0, &self.build_params(0));
 
         if needs_atlas_rebuild {
             let atlas_desc = ShadowAtlasDesc {
@@ -351,6 +360,7 @@ impl ShadowManager {
     /// If not, tries to allocate a new one.
     pub fn request_page(
         &mut self,
+        realm_tag: u32,
         light_id: u32,
         face: u32,
         x: u32,
@@ -358,6 +368,7 @@ impl ShadowManager {
         frame_index: u64,
     ) -> Option<ShadowAtlasHandle> {
         let key = ShadowPageKey {
+            realm_tag,
             light_id,
             face,
             x,
@@ -399,17 +410,32 @@ impl ShadowManager {
         }
     }
 
-    /// Synchronizes the GPU page table with the current cache state
-    pub fn sync_table(&mut self) {
+    fn compute_table_index(table_capacity: u32, grid: u32, key: ShadowPageKey) -> Option<u32> {
+        let light_base = key.light_id.checked_mul(6)?.checked_add(key.face)?;
+        let page_base = light_base.checked_mul(grid.checked_mul(grid)?)?;
+        let page_offset = key.y.checked_mul(grid)?.checked_add(key.x)?;
+        let linear = page_base.checked_add(page_offset)?;
+        if linear < table_capacity {
+            Some(linear)
+        } else {
+            None
+        }
+    }
+
+    fn table_index(&self, key: ShadowPageKey) -> Option<u32> {
+        Self::compute_table_index(self.table_capacity, self.config.virtual_grid_size, key)
+    }
+
+    fn write_table_for_realm(&mut self, realm_tag: u32) {
         let mut entries = vec![ShadowPageEntry::default(); self.table_capacity as usize];
 
         for (key, record) in &self.cache {
-            // Linear mapping of light+face+page to table index
-            let light_base = key.light_id * 6 + key.face;
-            let id = (light_base * self.config.virtual_grid_size * self.config.virtual_grid_size
-                + key.y * self.config.virtual_grid_size
-                + key.x)
-                % self.table_capacity;
+            if key.realm_tag != realm_tag {
+                continue;
+            }
+            let Some(id) = self.table_index(*key) else {
+                continue;
+            };
 
             if let Some(transform) = self.atlas.get_uv_transform(record.atlas_handle) {
                 entries[id as usize] = ShadowPageEntry {
@@ -428,6 +454,45 @@ impl ShadowManager {
         self.page_table.write_slice(0, &entries);
     }
 
+    /// Synchronizes the GPU page table with only one realm namespace.
+    pub fn sync_table_for_realm(&mut self, realm_tag: u32) {
+        self.write_table_for_realm(realm_tag);
+    }
+
+    /// Synchronizes the GPU page table with all cached namespaces.
+    pub fn sync_table(&mut self) {
+        let mut entries = vec![ShadowPageEntry::default(); self.table_capacity as usize];
+        for realm_tag in [0_u32, 1_u32] {
+            let mut realm_entries = vec![ShadowPageEntry::default(); self.table_capacity as usize];
+            for (key, record) in &self.cache {
+                if key.realm_tag != realm_tag {
+                    continue;
+                }
+                let Some(id) = self.table_index(*key) else {
+                    continue;
+                };
+                if let Some(transform) = self.atlas.get_uv_transform(record.atlas_handle) {
+                    realm_entries[id as usize] = ShadowPageEntry {
+                        scale_offset: glam::Vec4::new(
+                            transform.0,
+                            transform.1,
+                            transform.2,
+                            transform.3,
+                        ),
+                        layer_index: transform.4,
+                        _padding: [0; 3],
+                    };
+                }
+            }
+            for (idx, entry) in realm_entries.into_iter().enumerate() {
+                if entry.layer_index != u32::MAX {
+                    entries[idx] = entry;
+                }
+            }
+        }
+        self.page_table.write_slice(0, &entries);
+    }
+
     pub fn begin_frame(&mut self, frame_index: u64) {
         self.evict_stale_pages(frame_index, Self::MAX_IDLE_FRAMES);
         self.page_table.begin_frame(frame_index);
@@ -439,10 +504,10 @@ impl ShadowManager {
         self.is_dirty = true;
     }
 
-    pub fn prune_inactive_dense_lights(&mut self, active_shadow_light_count: u32) {
+    pub fn prune_inactive_dense_lights(&mut self, realm_tag: u32, active_shadow_light_count: u32) {
         let mut to_remove: Vec<(ShadowPageKey, ShadowAtlasHandle)> = Vec::new();
         for (key, record) in &self.cache {
-            if key.light_id >= active_shadow_light_count {
+            if key.realm_tag == realm_tag && key.light_id >= active_shadow_light_count {
                 to_remove.push((*key, record.atlas_handle));
             }
         }
@@ -479,5 +544,24 @@ impl ShadowManager {
 
     pub fn clear_dirty(&mut self) {
         self.is_dirty = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ShadowManager3d, ShadowPageKey};
+
+    #[test]
+    fn compute_table_index_is_linear_and_bounded() {
+        let key = ShadowPageKey {
+            realm_tag: 1,
+            light_id: 0,
+            face: 2,
+            x: 1,
+            y: 0,
+        };
+        assert_eq!(ShadowManager3d::compute_table_index(16, 2, key), Some(9));
+        let overflow = ShadowPageKey { light_id: 2, ..key };
+        assert_eq!(ShadowManager3d::compute_table_index(16, 2, overflow), None);
     }
 }

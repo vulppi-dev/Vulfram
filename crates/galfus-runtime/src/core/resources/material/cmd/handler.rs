@@ -1334,3 +1334,160 @@ pub fn engine_cmd_material_dispose(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::resources::{
+        MATERIAL_DEFINITION_STANDARD_2D_ID, MATERIAL_DEFINITION_STANDARD_2D_SLUG, MaterialKind,
+        MaterialRealmKind, ShaderMaterialPreset,
+    };
+    use crate::core::test_support::test_engine;
+
+    #[test]
+    fn material_definition_and_instance_lifecycle_for_twod() {
+        let mut engine = test_engine();
+        let create_definition = engine_cmd_material_definition_create(
+            &mut engine,
+            &CmdMaterialDefinitionCreateArgs {
+                definition_id: 200_100,
+                slug: "unit-2d-def-a".to_string(),
+                label: Some("Unit 2D Definition".to_string()),
+                realm_kind: MaterialRealmKind::TwoD,
+                preset: Some(ShaderMaterialPreset::Standard),
+                shader_type: None,
+                shader_source: None,
+                shader_params_schema: None,
+                capabilities: None,
+            },
+        );
+        assert!(create_definition.success, "{}", create_definition.message);
+
+        let update_definition = engine_cmd_material_definition_update(
+            &mut engine,
+            &CmdMaterialDefinitionUpdateArgs {
+                definition_id: 200_100,
+                slug: Some("unit-2d-def-b".to_string()),
+                label: Some("Unit 2D Definition Updated".to_string()),
+                realm_kind: Some(MaterialRealmKind::TwoD),
+                preset: None,
+                shader_type: None,
+                shader_source: None,
+                shader_params_schema: None,
+                capabilities: None,
+            },
+        );
+        assert!(update_definition.success, "{}", update_definition.message);
+
+        let create_instance = engine_cmd_material_instance_create(
+            &mut engine,
+            &CmdMaterialInstanceCreateArgs {
+                material_id: 200_101,
+                slug: "unit-2d-def-b".to_string(),
+                label: Some("Unit 2D Instance".to_string()),
+                options: None,
+            },
+        );
+        assert!(create_instance.success, "{}", create_instance.message);
+
+        let update_instance = engine_cmd_material_instance_update(
+            &mut engine,
+            &CmdMaterialInstanceUpdateArgs {
+                material_id: 200_101,
+                slug: Some(MATERIAL_DEFINITION_STANDARD_2D_SLUG.to_string()),
+                label: Some("Unit 2D Instance Updated".to_string()),
+                options: None,
+            },
+        );
+        assert!(update_instance.success, "{}", update_instance.message);
+
+        let dispose_instance = engine_cmd_material_instance_dispose(
+            &mut engine,
+            &CmdMaterialInstanceDisposeArgs {
+                material_id: 200_101,
+            },
+        );
+        assert!(dispose_instance.success, "{}", dispose_instance.message);
+
+        let dispose_definition = engine_cmd_material_definition_dispose(
+            &mut engine,
+            &CmdMaterialDefinitionDisposeArgs {
+                definition_id: 200_100,
+            },
+        );
+        assert!(dispose_definition.success, "{}", dispose_definition.message);
+    }
+
+    #[test]
+    fn disposing_twod_definition_falls_back_to_standard_2d_definition() {
+        let mut engine = test_engine();
+        let create_definition = engine_cmd_material_definition_create(
+            &mut engine,
+            &CmdMaterialDefinitionCreateArgs {
+                definition_id: 200_200,
+                slug: "unit-2d-fallback".to_string(),
+                label: None,
+                realm_kind: MaterialRealmKind::TwoD,
+                preset: Some(ShaderMaterialPreset::Standard),
+                shader_type: None,
+                shader_source: None,
+                shader_params_schema: None,
+                capabilities: None,
+            },
+        );
+        assert!(create_definition.success, "{}", create_definition.message);
+
+        let create_material = engine_cmd_material_create(
+            &mut engine,
+            &CmdMaterialCreateArgs {
+                material_id: 200_201,
+                label: Some("2D Material".to_string()),
+                slug: "unit-2d-fallback".to_string(),
+                kind: MaterialKind::Shader,
+                realm_kind: MaterialRealmKind::TwoD,
+                options: None,
+            },
+        );
+        assert!(create_material.success, "{}", create_material.message);
+
+        let dispose_definition = engine_cmd_material_definition_dispose(
+            &mut engine,
+            &CmdMaterialDefinitionDisposeArgs {
+                definition_id: 200_200,
+            },
+        );
+        assert!(dispose_definition.success, "{}", dispose_definition.message);
+
+        let definition_id = engine
+            .universal_state
+            .scene
+            .material_instances
+            .get(&200_201)
+            .map(|instance| instance.definition_id);
+        assert_eq!(definition_id, Some(MATERIAL_DEFINITION_STANDARD_2D_ID));
+    }
+
+    #[test]
+    fn twod_definition_rejects_wrong_realm_on_material_create() {
+        let mut engine = test_engine();
+        let create_result = engine_cmd_material_create(
+            &mut engine,
+            &CmdMaterialCreateArgs {
+                material_id: 200_300,
+                label: Some("invalid-realm".to_string()),
+                slug: MATERIAL_DEFINITION_STANDARD_2D_SLUG.to_string(),
+                kind: MaterialKind::Shader,
+                realm_kind: MaterialRealmKind::ThreeD,
+                options: None,
+            },
+        );
+        assert!(!create_result.success);
+        assert!(
+            create_result
+                .message
+                .contains("Material realm kind mismatch"),
+            "{}",
+            create_result.message
+        );
+    }
+}

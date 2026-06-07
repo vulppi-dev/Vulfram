@@ -4,8 +4,8 @@ use crate::core::render::passes;
 use galfus_realm_core::{
     RENDER_PASS_BATCH, RENDER_PASS_BLOOM, RENDER_PASS_COMPOSE, RENDER_PASS_CUSTOM_POST_FORWARD,
     RENDER_PASS_CUSTOM_PRE_FORWARD, RENDER_PASS_FORWARD, RENDER_PASS_LIGHT_CULL,
-    RENDER_PASS_OUTLINE, RENDER_PASS_POST, RENDER_PASS_PREPARE, RENDER_PASS_SHADOW,
-    RENDER_PASS_SKYBOX, RENDER_PASS_SSAO, RENDER_PASS_SSAO_BLUR, RealmKind,
+    RENDER_PASS_OUTLINE, RENDER_PASS_POST, RENDER_PASS_PREPARE, RENDER_PASS_SHADOW_2D,
+    RENDER_PASS_SHADOW_3D, RENDER_PASS_SKYBOX, RENDER_PASS_SSAO, RENDER_PASS_SSAO_BLUR, RealmKind,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -616,19 +616,55 @@ pub(super) fn execute_graph_to_view(
             node.node_id
         );
         match node.pass_id.as_str() {
-            RENDER_PASS_SHADOW => {
+            RENDER_PASS_SHADOW_3D | RENDER_PASS_SHADOW_2D => {
                 #[cfg(not(target_arch = "wasm32"))]
                 let shadow_start = std::time::Instant::now();
                 #[cfg(target_arch = "wasm32")]
                 let shadow_start = now_ns();
-                passes::pass_shadow_update(render_state, device, queue, encoder, frame_index);
-                if let Some(shadow) = &mut render_state.shadow {
-                    shadow.sync_table();
+                match realm_kind {
+                    RealmKind::ThreeD => {
+                        passes::pass_shadow_3d_update(
+                            render_state,
+                            device,
+                            queue,
+                            encoder,
+                            frame_index,
+                        );
+                    }
+                    RealmKind::TwoD => {
+                        passes::pass_shadow_2d_update(
+                            render_state,
+                            device,
+                            queue,
+                            encoder,
+                            frame_index,
+                            target_size,
+                        );
+                    }
+                }
+                if matches!(realm_kind, RealmKind::ThreeD)
+                    && let Some(shadow) = &mut render_state.shadow_3d
+                {
+                    shadow.sync_table_for_realm(0);
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    *shadow_cpu_ns_accum = shadow_cpu_ns_accum
-                        .saturating_add(shadow_start.elapsed().as_nanos() as u64);
+                    let shadow_ns = shadow_start.elapsed().as_nanos() as u64;
+                    *shadow_cpu_ns_accum = shadow_cpu_ns_accum.saturating_add(shadow_ns);
+                    if matches!(realm_kind, RealmKind::TwoD)
+                        && let Some(shadow2d) = render_state.shadow_2d.as_mut()
+                    {
+                        let shadow_ms = shadow_ns as f32 / 1_000_000.0;
+                        galfus_log::galfus_log_debug!(
+                            log_events,
+                            "render.shadow2d",
+                            "realm={} shadow2d_ms={:.3} updated_layers={} angular_res={} budget=disabled",
+                            _realm_id.0,
+                            shadow_ms as f64,
+                            shadow2d.last_updated_layers,
+                            shadow2d.config.angular_resolution
+                        );
+                    }
                 }
                 #[cfg(target_arch = "wasm32")]
                 {

@@ -4,12 +4,14 @@ use crate::core::realm::RealmId;
 use crate::core::resources::{
     CameraKind, CmdCameraCreateArgs, CmdEnvironmentCreateArgs, CmdMaterialCreateArgs,
     CmdMaterialDefinitionCreateArgs, CmdMaterialDefinitionDisposeArgs,
-    CmdMaterialDefinitionUpdateArgs, CmdMaterialInstanceCreateArgs, EnvironmentConfig,
-    MATERIAL_DEFINITION_STANDARD_2D_ID, MATERIAL_DEFINITION_STANDARD_ID, MaterialKind,
-    MaterialOptions, MaterialRealmKind, ShaderMaterialPreset, engine_cmd_camera_create,
-    engine_cmd_environment_create, engine_cmd_material_create,
-    engine_cmd_material_definition_create, engine_cmd_material_definition_dispose,
-    engine_cmd_material_definition_update, engine_cmd_material_instance_create,
+    CmdMaterialDefinitionUpdateArgs, CmdMaterialInstanceCreateArgs, CmdMaterialInstanceDisposeArgs,
+    CmdMaterialInstanceUpdateArgs, EnvironmentConfig, MATERIAL_DEFINITION_STANDARD_2D_ID,
+    MATERIAL_DEFINITION_STANDARD_ID, MaterialKind, MaterialOptions, MaterialRealmKind,
+    ShaderMaterialPreset, engine_cmd_camera_create, engine_cmd_environment_create,
+    engine_cmd_material_create, engine_cmd_material_definition_create,
+    engine_cmd_material_definition_dispose, engine_cmd_material_definition_update,
+    engine_cmd_material_instance_create, engine_cmd_material_instance_dispose,
+    engine_cmd_material_instance_update,
 };
 use crate::core::system::SystemEvent;
 use crate::core::test_support::test_engine;
@@ -514,4 +516,200 @@ fn material_program_cache_reports_evictions() {
     }
 
     assert!(engine.profiling.render.material_program_cache_evictions > 0);
+}
+
+#[test]
+fn twod_material_definition_and_instance_full_lifecycle_works() {
+    let mut engine = test_engine();
+
+    let create_definition = engine_cmd_material_definition_create(
+        &mut engine,
+        &CmdMaterialDefinitionCreateArgs {
+            definition_id: 51001,
+            slug: "custom-2d-51001".into(),
+            label: Some("Custom 2D Definition".into()),
+            realm_kind: MaterialRealmKind::TwoD,
+            preset: Some(ShaderMaterialPreset::Standard),
+            shader_type: None,
+            shader_source: None,
+            shader_params_schema: None,
+            capabilities: None,
+        },
+    );
+    assert!(create_definition.success, "{}", create_definition.message);
+
+    let update_definition = engine_cmd_material_definition_update(
+        &mut engine,
+        &CmdMaterialDefinitionUpdateArgs {
+            definition_id: 51001,
+            slug: Some("custom-2d-51001-v2".into()),
+            label: Some("Custom 2D Definition V2".into()),
+            realm_kind: Some(MaterialRealmKind::TwoD),
+            preset: Some(ShaderMaterialPreset::Standard),
+            shader_type: None,
+            shader_source: None,
+            shader_params_schema: None,
+            capabilities: None,
+        },
+    );
+    assert!(update_definition.success, "{}", update_definition.message);
+
+    let create_instance = engine_cmd_material_instance_create(
+        &mut engine,
+        &CmdMaterialInstanceCreateArgs {
+            material_id: 51002,
+            slug: "custom-2d-51001-v2".into(),
+            label: Some("Custom 2D Instance".into()),
+            options: None,
+        },
+    );
+    assert!(create_instance.success, "{}", create_instance.message);
+
+    let update_instance = engine_cmd_material_instance_update(
+        &mut engine,
+        &CmdMaterialInstanceUpdateArgs {
+            material_id: 51002,
+            slug: Some("standard-2d".into()),
+            label: Some("Instance moved to builtin 2D".into()),
+            options: None,
+        },
+    );
+    assert!(update_instance.success, "{}", update_instance.message);
+
+    let dispose_instance = engine_cmd_material_instance_dispose(
+        &mut engine,
+        &CmdMaterialInstanceDisposeArgs { material_id: 51002 },
+    );
+    assert!(dispose_instance.success, "{}", dispose_instance.message);
+    assert!(
+        !engine
+            .universal_state
+            .scene
+            .material_instances
+            .contains_key(&51002)
+    );
+
+    let dispose_definition = engine_cmd_material_definition_dispose(
+        &mut engine,
+        &CmdMaterialDefinitionDisposeArgs {
+            definition_id: 51001,
+        },
+    );
+    assert!(dispose_definition.success, "{}", dispose_definition.message);
+}
+
+#[test]
+fn twod_definition_dispose_rebinds_instance_to_twod_fallback() {
+    let mut engine = test_engine();
+
+    let create_definition = engine_cmd_material_definition_create(
+        &mut engine,
+        &CmdMaterialDefinitionCreateArgs {
+            definition_id: 52001,
+            slug: "custom-2d-52001".into(),
+            label: Some("Custom 2D Definition".into()),
+            realm_kind: MaterialRealmKind::TwoD,
+            preset: Some(ShaderMaterialPreset::Standard),
+            shader_type: None,
+            shader_source: None,
+            shader_params_schema: None,
+            capabilities: None,
+        },
+    );
+    assert!(create_definition.success, "{}", create_definition.message);
+
+    let create_instance = engine_cmd_material_instance_create(
+        &mut engine,
+        &CmdMaterialInstanceCreateArgs {
+            material_id: 52002,
+            slug: "custom-2d-52001".into(),
+            label: Some("Custom 2D Instance".into()),
+            options: None,
+        },
+    );
+    assert!(create_instance.success, "{}", create_instance.message);
+
+    let dispose_definition = engine_cmd_material_definition_dispose(
+        &mut engine,
+        &CmdMaterialDefinitionDisposeArgs {
+            definition_id: 52001,
+        },
+    );
+    assert!(dispose_definition.success, "{}", dispose_definition.message);
+
+    let instance = engine
+        .universal_state
+        .scene
+        .material_instances
+        .get(&52002)
+        .expect("2D instance must remain after fallback");
+    assert_eq!(instance.definition_id, MATERIAL_DEFINITION_STANDARD_2D_ID);
+
+    let material = engine
+        .universal_state
+        .scene
+        .realm3d
+        .materials
+        .get(&52002)
+        .expect("2D material must remain after fallback");
+    assert_eq!(material.realm_kind, MaterialRealmKind::TwoD);
+
+    let had_event = engine.runtime.events().iter().any(|event| {
+        matches!(
+            event,
+            EngineEvent::System(SystemEvent::MaterialInstanceFallbackApplied {
+                material_id,
+                previous_definition_id,
+                fallback_definition_id,
+                ..
+            }) if *material_id == 52002
+                && *previous_definition_id == 52001
+                && *fallback_definition_id == MATERIAL_DEFINITION_STANDARD_2D_ID
+        )
+    });
+    assert!(had_event);
+}
+
+#[test]
+fn twod_realm_exclusive_contracts_are_enforced_for_materials() {
+    let mut engine = test_engine();
+
+    let create_pbr_2d = engine_cmd_material_definition_create(
+        &mut engine,
+        &CmdMaterialDefinitionCreateArgs {
+            definition_id: 53001,
+            slug: "bad-pbr-2d".into(),
+            label: Some("Bad PBR 2D".into()),
+            realm_kind: MaterialRealmKind::TwoD,
+            preset: Some(ShaderMaterialPreset::Pbr),
+            shader_type: None,
+            shader_source: None,
+            shader_params_schema: None,
+            capabilities: None,
+        },
+    );
+    assert!(!create_pbr_2d.success);
+    assert!(
+        create_pbr_2d
+            .message
+            .contains("PBR preset is only supported for ThreeD realm")
+    );
+
+    let create_2d_with_3d_realm = engine_cmd_material_create(
+        &mut engine,
+        &CmdMaterialCreateArgs {
+            material_id: 53002,
+            label: Some("bad-realm-mismatch".into()),
+            slug: "standard-2d".into(),
+            kind: MaterialKind::Shader,
+            realm_kind: MaterialRealmKind::ThreeD,
+            options: None,
+        },
+    );
+    assert!(!create_2d_with_3d_realm.success);
+    assert!(
+        create_2d_with_3d_realm
+            .message
+            .contains("Material realm kind mismatch")
+    );
 }

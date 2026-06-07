@@ -1,4 +1,6 @@
 pub const RENDER_PASS_SHADOW: &str = "shadow";
+pub const RENDER_PASS_SHADOW_3D: &str = "shadow-3d";
+pub const RENDER_PASS_SHADOW_2D: &str = "shadow-2d";
 pub const RENDER_PASS_LIGHT_CULL: &str = "light-cull";
 pub const RENDER_PASS_SKYBOX: &str = "skybox";
 pub const RENDER_PASS_FORWARD: &str = "forward";

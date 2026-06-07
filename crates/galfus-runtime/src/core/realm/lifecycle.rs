@@ -15,6 +15,10 @@ pub fn detach_realm_runtime(
     universal_state.scene.realm3d.entities.remove(&realm_id);
     universal_state.scene.realm2d.entities.remove(&realm_id);
     universal_state
+        .scene
+        .realm2d_shadow_configs
+        .remove(&realm_id);
+    universal_state
         .targets
         .host_realm_index
         .retain(|_, indexed_realm_id| *indexed_realm_id != realm_id);
@@ -158,6 +162,11 @@ pub fn init_realm_runtime(
             .scene
             .realm2d
             .entities
+            .entry(realm_id)
+            .or_default();
+        universal_state
+            .scene
+            .realm2d_shadow_configs
             .entry(realm_id)
             .or_default();
     } else {

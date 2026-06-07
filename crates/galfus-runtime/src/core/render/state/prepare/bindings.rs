@@ -6,7 +6,7 @@ impl RenderState {
         let bindings = self.bindings.as_mut().unwrap();
         let library = self.library.as_ref().unwrap();
         let light_system = self.light_system.as_ref().unwrap();
-        let shadow_manager = self.shadow.as_ref().unwrap();
+        let shadow_manager = self.shadow_3d.as_ref().unwrap();
 
         let forward_atlas_view = &library.fallback_forward_atlas_view;
 

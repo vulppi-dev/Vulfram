@@ -51,6 +51,7 @@ export type EngineCmd =
   | { type: 'cmd-model3d-upsert'; content: Mod.CmdModel3dUpsertArgs }
   | { type: 'cmd-sprite2d-upsert'; content: TwoD.CmdSprite2dUpsertArgs }
   | { type: 'cmd-shape2d-upsert'; content: TwoD.CmdShape2dUpsertArgs }
+  | { type: 'cmd-realm2d-shadow-config-update'; content: TwoD.CmdRealm2dShadowConfigUpdateArgs }
   | { type: 'cmd-pose-update'; content: Mod.CmdPoseUpdateArgs }
   | { type: 'cmd-model3d-dispose'; content: Mod.CmdModel3dDisposeArgs }
   | { type: 'cmd-sprite2d-dispose'; content: TwoD.CmdSprite2dDisposeArgs }
@@ -94,7 +95,7 @@ export type EngineCmd =
   | { type: 'cmd-environment-dispose'; content: Env.CmdEnvironmentDisposeArgs }
   | { type: 'cmd-environment-get'; content: Env.CmdEnvironmentGetArgs }
   | { type: 'cmd-environment-list'; content: Env.CmdEnvironmentListArgs }
-  | { type: 'cmd-shadow-configure'; content: import('./shadow').CmdShadowConfigureArgs }
+  | { type: 'cmd-shadow3d-configure'; content: import('./shadow').CmdShadow3dConfigureArgs }
   | { type: 'cmd-realm-create'; content: Realm.CmdRealmCreateArgs }
   | { type: 'cmd-realm-dispose'; content: Realm.CmdRealmDisposeArgs }
   | { type: 'cmd-realm-get'; content: Realm.CmdRealmGetArgs }
@@ -145,6 +146,7 @@ export type CommandResponse =
   | { type: 'model3d-upsert'; content: Mod.CmdResultModelUpsert }
   | { type: 'sprite2d-upsert'; content: TwoD.CmdResultTwoDUpsert }
   | { type: 'shape2d-upsert'; content: TwoD.CmdResultTwoDUpsert }
+  | { type: 'realm2d-shadow-config-update'; content: TwoD.CmdResultTwoDUpsert }
   | { type: 'pose-update'; content: Mod.CmdResultPoseUpdate }
   | { type: 'model3d-dispose'; content: Mod.CmdResultModelDispose }
   | { type: 'sprite2d-dispose'; content: TwoD.CmdResultTwoDDispose }
@@ -188,7 +190,7 @@ export type CommandResponse =
   | { type: 'environment-dispose'; content: Env.CmdResultEnvironment }
   | { type: 'environment-get'; content: Env.CmdResultEnvironmentGet }
   | { type: 'environment-list'; content: Env.CmdResultEnvironmentList }
-  | { type: 'shadow-configure'; content: import('./shadow').CmdResultShadowConfigure }
+  | { type: 'shadow3d-configure'; content: import('./shadow').CmdResultShadow3dConfigure }
   | { type: 'realm-create'; content: Realm.CmdResultRealmCreate }
   | { type: 'realm-dispose'; content: Realm.CmdResultRealmDispose }
   | { type: 'realm-get'; content: Realm.CmdResultRealmGet }

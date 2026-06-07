@@ -7,6 +7,8 @@
 - current runtime architecture: [ARCH.md](ARCH.md)
 - internal API snapshot: [API.md](API.md)
 - realm architecture: [REALM-ARCH.md](REALM-ARCH.md)
+- realm2d parity roadmap: [REALM2D-PARITY-ROADMAP.md](REALM2D-PARITY-ROADMAP.md)
+- realm2d host contract: [REALM2D-HOST-CONTRACT.md](REALM2D-HOST-CONTRACT.md)
 - render graph model: [RENDER-GRAPH.md](RENDER-GRAPH.md)
 - custom material shaders: [SHADERS-MATERIALS.md](SHADERS-MATERIALS.md)
 - custom pass shaders: [SHADERS-PASSES.md](SHADERS-PASSES.md)

@@ -2,6 +2,7 @@ use glam::{Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::core::id_policy::validate_host_logical_id;
+use crate::core::realm::{RealmId, RealmKind};
 use crate::core::resources::common::{default_layer_mask, mark_realm_windows_dirty};
 use crate::core::resources::{LightComponent, LightKind, LightRecord};
 use crate::core::state::EngineState;
@@ -31,6 +32,8 @@ pub struct CmdLightCreateArgs {
     pub spot_inner_outer: Option<Vec2>,
     #[serde(default = "default_layer_mask")]
     pub layer_mask: u32,
+    #[serde(default)]
+    pub shadow_layer_mask: Option<u32>,
     #[serde(default = "crate::core::resources::common::default_true")]
     pub active: bool,
     #[serde(default = "crate::core::resources::common::default_true")]
@@ -59,6 +62,7 @@ pub struct CmdLightUpdateArgs {
     pub range: Option<f32>,
     pub spot_inner_outer: Option<Vec2>,
     pub layer_mask: Option<u32>,
+    pub shadow_layer_mask: Option<u32>,
     pub active: Option<bool>,
     pub cast_shadow: Option<bool>,
 }
@@ -84,6 +88,17 @@ pub struct CmdResultLightDispose {
     pub message: String,
 }
 
+fn resolve_realm_kind(engine: &EngineState, realm_id: RealmId) -> Result<RealmKind, String> {
+    engine
+        .universal_state
+        .composition
+        .realms
+        .entries
+        .get(&realm_id)
+        .map(|realm| realm.value.kind)
+        .ok_or_else(|| format!("Realm {} not found", realm_id.0))
+}
+
 pub fn engine_cmd_light_create(
     engine: &mut EngineState,
     args: &CmdLightCreateArgs,
@@ -100,15 +115,37 @@ pub fn engine_cmd_light_create(
             message,
         };
     }
-    let realm_id = crate::core::realm::RealmId(args.realm_id);
-    let entities = engine
-        .universal_state
-        .scene
-        .realm3d
-        .entities
-        .entry(realm_id)
-        .or_default();
-    if entities.lights.contains_key(&args.light_id) {
+    let realm_id = RealmId(args.realm_id);
+    let realm_kind = match resolve_realm_kind(engine, realm_id) {
+        Ok(kind) => kind,
+        Err(message) => {
+            return CmdResultLightCreate {
+                success: false,
+                message,
+            };
+        }
+    };
+    let light_exists = match realm_kind {
+        RealmKind::ThreeD => engine
+            .universal_state
+            .scene
+            .realm3d
+            .entities
+            .entry(realm_id)
+            .or_default()
+            .lights
+            .contains_key(&args.light_id),
+        RealmKind::TwoD => engine
+            .universal_state
+            .scene
+            .realm2d
+            .entities
+            .entry(realm_id)
+            .or_default()
+            .lights
+            .contains_key(&args.light_id),
+    };
+    if light_exists {
         let message = format!("Light with id {} already exists", args.light_id);
         push_error_event(
             engine,
@@ -143,22 +180,45 @@ pub fn engine_cmd_light_create(
         kind,
         args.cast_shadow,
     );
-    entities.lights.insert(
-        args.light_id,
-        LightRecord::new(
-            args.label.clone(),
-            component,
-            args.active,
-            args.layer_mask,
-            args.cast_shadow,
-        ),
+    let record = LightRecord::new(
+        args.label.clone(),
+        component,
+        args.active,
+        args.layer_mask,
+        args.shadow_layer_mask.unwrap_or(args.layer_mask),
+        args.cast_shadow,
     );
+    match realm_kind {
+        RealmKind::ThreeD => {
+            engine
+                .universal_state
+                .scene
+                .realm3d
+                .entities
+                .entry(realm_id)
+                .or_default()
+                .lights
+                .insert(args.light_id, record);
+        }
+        RealmKind::TwoD => {
+            engine
+                .universal_state
+                .scene
+                .realm2d
+                .entities
+                .entry(realm_id)
+                .or_default()
+                .lights
+                .insert(args.light_id, record);
+        }
+    }
     mark_realm_windows_dirty(engine, args.realm_id);
     galfus_log::galfus_log_debug!(
         engine,
-        "realm3d.state",
-        "light-created realm={} light={} kind={:?} intensity={} range={} active={} layer_mask={} cast_shadow={}",
+        "realm.state",
+        "light-created realm={} realm_kind={:?} light={} light_kind={:?} intensity={} range={} active={} layer_mask={} cast_shadow={}",
         args.realm_id,
+        realm_kind,
         args.light_id,
         kind,
         intensity,
@@ -190,28 +250,33 @@ pub fn engine_cmd_light_update(
             message,
         };
     }
-    let realm_id = crate::core::realm::RealmId(args.realm_id);
-    let Some(entities) = engine
-        .universal_state
-        .scene
-        .realm3d
-        .entities
-        .get_mut(&realm_id)
-    else {
-        let message = format!("Realm {} not found", args.realm_id);
-        push_error_event(
-            engine,
-            "light",
-            message.clone(),
-            None,
-            Some("light3d-upsert".into()),
-        );
-        return CmdResultLightUpdate {
-            success: false,
-            message,
-        };
+    let realm_id = RealmId(args.realm_id);
+    let realm_kind = match resolve_realm_kind(engine, realm_id) {
+        Ok(kind) => kind,
+        Err(message) => {
+            return CmdResultLightUpdate {
+                success: false,
+                message,
+            };
+        }
     };
-    let Some(record) = entities.lights.get_mut(&args.light_id) else {
+    let record = match realm_kind {
+        RealmKind::ThreeD => engine
+            .universal_state
+            .scene
+            .realm3d
+            .entities
+            .get_mut(&realm_id)
+            .and_then(|entities| entities.lights.get_mut(&args.light_id)),
+        RealmKind::TwoD => engine
+            .universal_state
+            .scene
+            .realm2d
+            .entities
+            .get_mut(&realm_id)
+            .and_then(|entities| entities.lights.get_mut(&args.light_id)),
+    };
+    let Some(record) = record else {
         let message = format!("Light with id {} not found", args.light_id);
         push_error_event(
             engine,
@@ -263,6 +328,12 @@ pub fn engine_cmd_light_update(
     }
     if let Some(layer_mask) = args.layer_mask {
         record.layer_mask = layer_mask;
+        if args.shadow_layer_mask.is_none() {
+            record.shadow_layer_mask = layer_mask;
+        }
+    }
+    if let Some(shadow_layer_mask) = args.shadow_layer_mask {
+        record.shadow_layer_mask = shadow_layer_mask;
     }
     if let Some(active) = args.active {
         record.active = active;
@@ -294,31 +365,38 @@ pub fn engine_cmd_light_dispose(
             message,
         };
     }
-    let realm_id = crate::core::realm::RealmId(args.realm_id);
-    let Some(entities) = engine
-        .universal_state
-        .scene
-        .realm3d
-        .entities
-        .get_mut(&realm_id)
-    else {
-        let message = format!("Realm {} not found", args.realm_id);
-        push_error_event(
-            engine,
-            "light",
-            message.clone(),
-            None,
-            Some("light3d-dispose".into()),
-        );
-        return CmdResultLightDispose {
-            success: false,
-            message,
-        };
+    let realm_id = RealmId(args.realm_id);
+    let realm_kind = match resolve_realm_kind(engine, realm_id) {
+        Ok(kind) => kind,
+        Err(message) => {
+            return CmdResultLightDispose {
+                success: false,
+                message,
+            };
+        }
     };
-    if entities.lights.remove(&args.light_id).is_some() {
-        for render_state in engine.render.states.values_mut() {
-            if let Some(shadow) = render_state.shadow.as_mut() {
-                shadow.mark_dirty();
+    let removed = match realm_kind {
+        RealmKind::ThreeD => engine
+            .universal_state
+            .scene
+            .realm3d
+            .entities
+            .get_mut(&realm_id)
+            .and_then(|entities| entities.lights.remove(&args.light_id)),
+        RealmKind::TwoD => engine
+            .universal_state
+            .scene
+            .realm2d
+            .entities
+            .get_mut(&realm_id)
+            .and_then(|entities| entities.lights.remove(&args.light_id)),
+    };
+    if removed.is_some() {
+        if matches!(realm_kind, RealmKind::ThreeD) {
+            for render_state in engine.render.states.values_mut() {
+                if let Some(shadow) = render_state.shadow_3d.as_mut() {
+                    shadow.mark_dirty();
+                }
             }
         }
         mark_realm_windows_dirty(engine, args.realm_id);

@@ -48,6 +48,7 @@ pub(super) fn command_type_for_cmd(cmd: &EngineCmd) -> &'static str {
         EngineCmd::CmdModel3dUpsert(_) => "model3d-upsert",
         EngineCmd::CmdSprite2dUpsert(_) => "sprite2d-upsert",
         EngineCmd::CmdShape2dUpsert(_) => "shape2d-upsert",
+        EngineCmd::CmdRealm2dShadowConfigUpdate(_) => "realm2d-shadow-config-update",
         EngineCmd::CmdPoseUpdate(_) => "pose-update",
         EngineCmd::CmdModel3dDispose(_) => "model3d-dispose",
         EngineCmd::CmdSprite2dDispose(_) => "sprite2d-dispose",
@@ -77,7 +78,7 @@ pub(super) fn command_type_for_cmd(cmd: &EngineCmd) -> &'static str {
         EngineCmd::CmdPrimitiveGeometryCreate(_) => "primitive-geometry-create",
         EngineCmd::CmdEnvironmentUpsert(_) => "environment-upsert",
         EngineCmd::CmdEnvironmentDispose(_) => "environment-dispose",
-        EngineCmd::CmdShadowConfigure(_) => "shadow-configure",
+        EngineCmd::CmdShadow3dConfigure(_) => "shadow3d-configure",
         EngineCmd::CmdRealmCreate(_) => "realm-create",
         EngineCmd::CmdRealmDispose(_) => "realm-dispose",
         EngineCmd::CmdRenderGraphUpsert(_) => "render-graph-upsert",
@@ -156,12 +157,12 @@ fn command_has_pending_dependencies(engine: &EngineState, cmd: &EngineCmd) -> bo
         // Query/measurement commands must be non-blocking and should not be deferred.
         EngineCmd::CmdWindowMeasurement(_) => false,
         EngineCmd::CmdTargetMeasurement(_) => false,
-        EngineCmd::CmdShadowConfigure(args) => {
+        EngineCmd::CmdShadow3dConfigure(args) => {
             engine.device.is_none()
                 || engine
                     .render
                     .get(&args.window_id)
-                    .and_then(|state| state.shadow.as_ref())
+                    .and_then(|state| state.shadow_3d.as_ref())
                     .is_none()
         }
         EngineCmd::CmdTextureCreateSolidColor(_) => {
