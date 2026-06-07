@@ -74,7 +74,7 @@ struct Shadow2dSampleRaw {
 const TWO_D_MAX_LIGHTS_PER_CAMERA: usize = 64;
 const TWO_D_MAX_OCCLUDERS_PER_CAMERA: usize = 256;
 const TWO_D_SHADOW_MASK_SIZE: u32 = 256;
-const TWO_D_SHADOW_SAMPLES_PER_DIRECTION: usize = 4;
+const TWO_D_SHADOW_SAMPLES_PER_DIRECTION: usize = 8;
 const TWO_D_TAU: f32 = std::f32::consts::TAU;
 
 #[derive(Debug, Clone, Copy)]
@@ -91,10 +91,12 @@ struct TwoDOccluderLightCone {
     penumbra_interval: glam::Vec2,
 }
 
-#[derive(Clone, Copy)]
-struct TwoDOccluderConeCandidate<'a> {
-    occluder: &'a TwoDOccluderRaw,
+#[derive(Clone)]
+struct TwoDOccluderConeCandidate {
     cone: TwoDOccluderLightCone,
+    support_depth: f32,
+    occluder: TwoDOccluderRaw,
+    shadow_height: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,6 +296,48 @@ fn unwrap_angle_near(angle: f32, reference: f32) -> f32 {
     unwrapped
 }
 
+fn wrap_angle_positive(angle: f32) -> f32 {
+    angle.rem_euclid(TWO_D_TAU)
+}
+
+fn smallest_angular_vertex_interval(
+    vertices: [TwoDOccluderAngularVertex; 4],
+    reference_angle: f32,
+) -> Option<(TwoDOccluderAngularVertex, TwoDOccluderAngularVertex)> {
+    let mut angular_vertices = vertices.map(|mut vertex| {
+        vertex.angle = wrap_angle_positive(vertex.angle);
+        vertex
+    });
+    angular_vertices.sort_by(|a, b| a.angle.total_cmp(&b.angle));
+
+    let mut largest_gap_index = 0_usize;
+    let mut largest_gap = -1.0_f32;
+    for index in 0..angular_vertices.len() {
+        let next = (index + 1) % angular_vertices.len();
+        let next_angle = if next == 0 {
+            angular_vertices[next].angle + TWO_D_TAU
+        } else {
+            angular_vertices[next].angle
+        };
+        let gap = next_angle - angular_vertices[index].angle;
+        if gap > largest_gap {
+            largest_gap = gap;
+            largest_gap_index = index;
+        }
+    }
+
+    let left_index = (largest_gap_index + 1) % angular_vertices.len();
+    let right_index = largest_gap_index;
+    let mut left = angular_vertices[left_index];
+    let mut right = angular_vertices[right_index];
+    left.angle = unwrap_angle_near(left.angle, reference_angle);
+    right.angle = unwrap_angle_near(right.angle, left.angle);
+    if right.angle < left.angle {
+        right.angle += TWO_D_TAU;
+    }
+    (right.angle - left.angle > 1e-5).then_some((left, right))
+}
+
 fn build_occluder_light_cone(
     silhouette: &TwoDOccluderSilhouette,
     light_pos: glam::Vec2,
@@ -325,13 +369,11 @@ fn build_occluder_light_cone(
         }
         *vertex = TwoDOccluderAngularVertex {
             point,
-            angle: unwrap_angle_near(delta.y.atan2(delta.x), reference_angle),
+            angle: delta.y.atan2(delta.x),
             distance,
         };
     }
-    angular_vertices.sort_by(|a, b| a.angle.total_cmp(&b.angle));
-    let left = angular_vertices[0];
-    let right = angular_vertices[angular_vertices.len() - 1];
+    let (left, right) = smallest_angular_vertex_interval(angular_vertices, reference_angle)?;
     let blocker_span = right.angle - left.angle;
     if blocker_span <= 1e-5 || blocker_span >= std::f32::consts::PI - 1e-4 {
         return None;
@@ -373,10 +415,6 @@ fn ray_segment_hit_distance(
         return t;
     }
     -1.0
-}
-
-fn angle_in_interval(angle: f32, interval: glam::Vec2) -> bool {
-    angle >= interval.x && angle <= interval.y
 }
 
 fn empty_shadow_sample() -> Shadow2dSampleRaw {
@@ -432,7 +470,18 @@ fn rasterize_shadow_samples_for_light(
     for occluder in occluders {
         if let Some(cone) = build_occluder_light_cone(&occluder.silhouette, light_pos, light_radius)
         {
-            cones.push(TwoDOccluderConeCandidate { occluder, cone });
+            let support_depth = cone
+                .support_points
+                .iter()
+                .map(|point| point.distance(light_pos))
+                .fold(f32::INFINITY, f32::min)
+                + occluder.shadow_height * 1e-4;
+            cones.push(TwoDOccluderConeCandidate {
+                cone,
+                support_depth,
+                occluder: (*occluder).clone(),
+                shadow_height: occluder.shadow_height,
+            });
         }
     }
     for x in 0..resolution {
@@ -440,27 +489,25 @@ fn rasterize_shadow_samples_for_light(
         let angle = u * TWO_D_TAU;
         let reference = angle;
         let ray_dir = glam::Vec2::new(angle.cos(), angle.sin());
-        let mut candidates: Vec<(f32, f32, TwoDOccluderLightCone, &TwoDOccluderRaw)> =
+        let mut candidates: Vec<(f32, f32, TwoDOccluderLightCone, &TwoDOccluderConeCandidate)> =
             Vec::with_capacity(TWO_D_SHADOW_SAMPLES_PER_DIRECTION);
         for candidate in &cones {
             let cone = candidate.cone;
-            let blocker_interval = glam::Vec2::new(
-                unwrap_angle_near(cone.blocker_interval.x, reference),
-                unwrap_angle_near(cone.blocker_interval.y, reference),
-            );
-            if !angle_in_interval(reference, blocker_interval) {
-                continue;
-            }
-            let Some(ray_hit_depth) =
-                ray_hit_distance_for_occluder(light_pos, ray_dir, candidate.occluder)
-            else {
-                continue;
-            };
-            let precedence_depth = ray_hit_depth + candidate.occluder.shadow_height * 1e-4;
-            candidates.push((precedence_depth, ray_hit_depth, cone, candidate.occluder));
+            let ray_hit_depth =
+                ray_hit_distance_for_occluder(light_pos, ray_dir, &candidate.occluder);
+            let blocker_depth = ray_hit_depth.unwrap_or(candidate.support_depth);
+            let only_penumbra = ray_hit_depth.is_none();
+            let precedence_depth = blocker_depth
+                + candidate.shadow_height * 1e-4
+                + if only_penumbra {
+                    light_range * 2.0
+                } else {
+                    0.0
+                };
+            candidates.push((precedence_depth, blocker_depth, cone, candidate));
         }
         candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (slot, (_, blocker_depth, cone, occluder)) in candidates
+        for (slot, (_, blocker_depth, cone, candidate)) in candidates
             .into_iter()
             .take(TWO_D_SHADOW_SAMPLES_PER_DIRECTION)
             .enumerate()
@@ -476,10 +523,10 @@ fn rasterize_shadow_samples_for_light(
                 (cone.support_points[0].distance(light_pos) / light_range).clamp(0.0, 1.0);
             sample.support_right_distance =
                 (cone.support_points[1].distance(light_pos) / light_range).clamp(0.0, 1.0);
-            sample.occluder_v0 = occluder.silhouette.vertices[0];
-            sample.occluder_v1 = occluder.silhouette.vertices[1];
-            sample.occluder_v2 = occluder.silhouette.vertices[2];
-            sample.occluder_v3 = occluder.silhouette.vertices[3];
+            sample.occluder_v0 = candidate.occluder.silhouette.vertices[0];
+            sample.occluder_v1 = candidate.occluder.silhouette.vertices[1];
+            sample.occluder_v2 = candidate.occluder.silhouette.vertices[2];
+            sample.occluder_v3 = candidate.occluder.silhouette.vertices[3];
         }
     }
     samples
@@ -1698,9 +1745,11 @@ fn layer_visible_in_camera(layer: i32, layer_mask: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
+        TWO_D_SHADOW_SAMPLES_PER_DIRECTION, TWO_D_TAU, TwoDLightRaw, TwoDOccluderRaw,
         build_occluder_light_cone, build_quad_occluder_silhouette, collect_visible_2d_lights,
         layer_visible_in_camera, material_allows_2d, material_tint_for_batch,
-        material_uses_compiled_2d_shader, pass_2d_batch, pass_2d_prepare, resolve_2d_draw_batches,
+        material_uses_compiled_2d_shader, pass_2d_batch, pass_2d_prepare,
+        rasterize_shadow_samples_for_light, resolve_2d_draw_batches,
     };
     use crate::core::render::RenderState;
     use crate::core::render::state::{
@@ -2136,6 +2185,45 @@ mod tests {
         assert_vec2_close(cone.support_points[1], glam::Vec2::new(1.5, 0.5));
         assert!(cone.penumbra_interval.x < cone.blocker_interval.x);
         assert!(cone.penumbra_interval.y > cone.blocker_interval.y);
+    }
+
+    #[test]
+    fn shadow_samples_include_penumbra_only_directions() {
+        let silhouette = build_quad_occluder_silhouette(glam::Mat4::from_translation(
+            glam::Vec3::new(2.0, 0.0, 0.0),
+        ))
+        .expect("valid quad silhouette");
+        let cone =
+            build_occluder_light_cone(&silhouette, glam::Vec2::ZERO, 0.25).expect("valid cone");
+        let penumbra_only_angle = (cone.blocker_interval.y + cone.penumbra_interval.y) * 0.5;
+        assert!(penumbra_only_angle > cone.blocker_interval.y);
+        assert!(penumbra_only_angle < cone.penumbra_interval.y);
+
+        let light = TwoDLightRaw {
+            position: glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
+            color: glam::Vec4::ONE,
+            intensity_range: glam::Vec2::new(1.0, 8.0),
+            light_radius: 0.25,
+            _padding0: 0.0,
+            kind_flags: glam::UVec2::ZERO,
+            shadow_layer_mask: u32::MAX,
+            shadow_index: 0,
+        };
+        let occluder = TwoDOccluderRaw {
+            silhouette,
+            shadow_layer_mask: u32::MAX,
+            shadow_height: 0.0,
+        };
+        let resolution = 4096;
+        let samples = rasterize_shadow_samples_for_light(resolution, &light, &[&occluder]);
+        let x = ((penumbra_only_angle / TWO_D_TAU) * resolution as f32).floor() as usize;
+        let base = x * TWO_D_SHADOW_SAMPLES_PER_DIRECTION;
+
+        assert!(
+            samples[base..base + TWO_D_SHADOW_SAMPLES_PER_DIRECTION]
+                .iter()
+                .any(|sample| sample.flags > 0.5)
+        );
     }
 
     #[test]

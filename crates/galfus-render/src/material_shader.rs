@@ -925,7 +925,7 @@ fn sample_shadow_data_2d(
 ) -> ShadowSample2D {
     let wrapped = angular_x - floor(angular_x / shadow_res) * shadow_res;
     let x0 = i32(floor(wrapped)) % shadow_res_i;
-    let samples_per_direction = 4u;
+    let samples_per_direction = 8u;
     let direction_index = u32(max(layer, 0)) * u32(shadow_res_i) + u32(max(x0, 0));
     let index = direction_index * samples_per_direction + min(candidate_slot, samples_per_direction - 1u);
     return shadow_samples_2d[index];
@@ -1001,6 +1001,150 @@ fn occluder_covers_light_disk_from_receiver(
         && ray_hits_occluder_before_light_2d(world_xy, right_dir, tangent_distance, sample);
 }
 
+fn occluder_intersects_light_disk_from_receiver(
+    sample: ShadowSample2D,
+    world_xy: vec2<f32>,
+    light_xy: vec2<f32>,
+    light_radius: f32,
+) -> bool {
+    let to_light = light_xy - world_xy;
+    let light_distance = length(to_light);
+    if (light_distance <= max(light_radius, 0.0001)) {
+        return false;
+    }
+
+    let center_dir = to_light / light_distance;
+    let light_radius_clamped = max(light_radius, 0.0);
+    let half_angle = asin(clamp(light_radius_clamped / max(light_distance, 0.0001), 0.0, 0.9999));
+    let tangent_distance = sqrt(max(light_distance * light_distance - light_radius_clamped * light_radius_clamped, 0.0));
+    let c = cos(half_angle);
+    let s = sin(half_angle);
+    let left_dir = vec2<f32>(
+        center_dir.x * c - center_dir.y * s,
+        center_dir.x * s + center_dir.y * c,
+    );
+    let right_dir = vec2<f32>(
+        center_dir.x * c + center_dir.y * s,
+        -center_dir.x * s + center_dir.y * c,
+    );
+
+    return ray_hits_occluder_before_light_2d(world_xy, center_dir, light_distance, sample)
+        || ray_hits_occluder_before_light_2d(world_xy, left_dir, tangent_distance, sample)
+        || ray_hits_occluder_before_light_2d(world_xy, right_dir, tangent_distance, sample);
+}
+
+fn clipped_edge_light_overlap(
+    world_xy: vec2<f32>,
+    edge_a: vec2<f32>,
+    edge_b: vec2<f32>,
+    light_angle: f32,
+    light_left: f32,
+    light_right: f32,
+) -> vec2<f32> {
+    let raw_a = atan2((edge_a - world_xy).y, (edge_a - world_xy).x);
+    let raw_b = atan2((edge_b - world_xy).y, (edge_b - world_xy).x);
+    var a = unwrap_angle_near(raw_a, light_angle);
+    var b = unwrap_angle_near(raw_b, a);
+    if (b < a) {
+        let tmp = a;
+        a = b;
+        b = tmp;
+    }
+    if (b - a > 3.14159265359) {
+        let tmp = a;
+        a = b;
+        b = tmp + 6.28318530718;
+    }
+    a = unwrap_angle_near(a, light_angle);
+    b = unwrap_angle_near(b, a);
+    if (b < a) {
+        b = b + 6.28318530718;
+    }
+
+    let overlap_left = max(light_left, a);
+    let overlap_right = min(light_right, b);
+    if (overlap_right <= overlap_left) {
+        return vec2<f32>(0.0, 0.0);
+    }
+    return vec2<f32>(overlap_left, overlap_right);
+}
+
+fn merge_interval_length_4(
+    i0: vec2<f32>,
+    i1: vec2<f32>,
+    i2: vec2<f32>,
+    i3: vec2<f32>,
+) -> f32 {
+    var starts = array<f32, 4>(i0.x, i1.x, i2.x, i3.x);
+    var ends = array<f32, 4>(i0.y, i1.y, i2.y, i3.y);
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        for (var j = i + 1u; j < 4u; j = j + 1u) {
+            if (starts[j] < starts[i]) {
+                let start_tmp = starts[i];
+                let end_tmp = ends[i];
+                starts[i] = starts[j];
+                ends[i] = ends[j];
+                starts[j] = start_tmp;
+                ends[j] = end_tmp;
+            }
+        }
+    }
+
+    var total = 0.0;
+    var current_start = 0.0;
+    var current_end = 0.0;
+    var has_interval = false;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        if (ends[i] <= starts[i]) {
+            continue;
+        }
+        if (!has_interval) {
+            current_start = starts[i];
+            current_end = ends[i];
+            has_interval = true;
+            continue;
+        }
+        if (starts[i] <= current_end) {
+            current_end = max(current_end, ends[i]);
+        } else {
+            total = total + max(current_end - current_start, 0.0);
+            current_start = starts[i];
+            current_end = ends[i];
+        }
+    }
+    if (has_interval) {
+        total = total + max(current_end - current_start, 0.0);
+    }
+    return total;
+}
+
+fn occluder_light_disk_visibility_from_receiver(
+    sample: ShadowSample2D,
+    world_xy: vec2<f32>,
+    light_xy: vec2<f32>,
+    light_radius: f32,
+) -> f32 {
+    let to_light = light_xy - world_xy;
+    let light_distance = length(to_light);
+    let light_radius_clamped = max(light_radius, 0.0);
+    if (light_distance <= max(light_radius_clamped, 0.0001)) {
+        return 1.0;
+    }
+
+    let light_angle = atan2(to_light.y, to_light.x);
+    let light_half_angle = asin(clamp(light_radius_clamped / max(light_distance, 0.0001), 0.0, 0.9999));
+    let light_left = light_angle - light_half_angle;
+    let light_right = light_angle + light_half_angle;
+
+    let edge0 = clipped_edge_light_overlap(world_xy, sample.occluder_v0, sample.occluder_v1, light_angle, light_left, light_right);
+    let edge1 = clipped_edge_light_overlap(world_xy, sample.occluder_v1, sample.occluder_v2, light_angle, light_left, light_right);
+    let edge2 = clipped_edge_light_overlap(world_xy, sample.occluder_v2, sample.occluder_v3, light_angle, light_left, light_right);
+    let edge3 = clipped_edge_light_overlap(world_xy, sample.occluder_v3, sample.occluder_v0, light_angle, light_left, light_right);
+    let blocked_angle = merge_interval_length_4(edge0, edge1, edge2, edge3);
+    let coverage = clamp(blocked_angle / max(light_right - light_left, 1e-5), 0.0, 1.0);
+    return 1.0 - coverage;
+}
+
 fn shadow_visibility_from_sample(
     sample: ShadowSample2D,
     angle: f32,
@@ -1017,29 +1161,11 @@ fn shadow_visibility_from_sample(
     if (occluder_covers_light_disk_from_receiver(sample, world_xy, light_xy, light_radius)) {
         return 0.0;
     }
-
-    let blocker_center = 0.5 * (sample.blocker_left + sample.blocker_right);
-    let sample_angle = unwrap_angle_near(angle, blocker_center);
-    let blocker_left = sample.blocker_left;
-    let blocker_right = sample.blocker_right;
-    let left_cos = max(cos(sample_angle - blocker_left), 0.0001);
-    let right_cos = max(cos(sample_angle - blocker_right), 0.0001);
-    let left_start = sample.support_left_distance / left_cos;
-    let right_start = sample.support_right_distance / right_cos;
-    var shadow_start = sample.blocker_distance;
-    if (sample_angle < blocker_left) {
-        shadow_start = left_start;
-    } else if (sample_angle > blocker_right) {
-        shadow_start = right_start;
-    } else {
-        let edge_t = clamp((sample_angle - blocker_left) / max(blocker_right - blocker_left, 1e-4), 0.0, 1.0);
-        shadow_start = mix(left_start, right_start, edge_t);
-    }
-    if (dist_ratio <= shadow_start + contact_offset) {
+    if (!occluder_intersects_light_disk_from_receiver(sample, world_xy, light_xy, light_radius)) {
         return 1.0;
     }
 
-    return 1.0;
+    return occluder_light_disk_visibility_from_receiver(sample, world_xy, light_xy, light_radius);
 }
 
 fn apply_2d_lighting(base_color: vec4<f32>, world_pos: vec3<f32>) -> vec4<f32> {
@@ -1070,26 +1196,48 @@ fn apply_2d_lighting(base_color: vec4<f32>, world_pos: vec3<f32>) -> vec4<f32> {
         let angular_x = angular_u * shadow_res;
         let contact_offset = max(camera.shadow_controls.x, 0.0);
         var shadow_visibility = 1.0;
-        for (var candidate_slot = 0u; candidate_slot < 4u; candidate_slot = candidate_slot + 1u) {
-            let shadow_sample = sample_shadow_data_2d(
-                layer,
-                shadow_res,
-                shadow_res_i,
-                angular_x,
-                candidate_slot
-            );
-            shadow_visibility = min(
-                shadow_visibility,
-                shadow_visibility_from_sample(
+        var full_umbra = false;
+        for (var direction_offset = -1i; direction_offset <= 1i; direction_offset = direction_offset + 1i) {
+            let sample_x = angular_x + f32(direction_offset);
+            for (var candidate_slot = 0u; candidate_slot < 8u; candidate_slot = candidate_slot + 1u) {
+                let shadow_sample = sample_shadow_data_2d(
+                    layer,
+                    shadow_res,
+                    shadow_res_i,
+                    sample_x,
+                    candidate_slot
+                );
+                if (shadow_sample.flags >= 0.5 && occluder_covers_light_disk_from_receiver(
                     shadow_sample,
-                    angle,
-                    dist_ratio,
-                    contact_offset,
                     world_pos.xy,
                     l.position.xy,
                     l.light_radius
-                )
-            );
+                )) {
+                    full_umbra = true;
+                }
+            }
+        }
+        if (full_umbra) {
+            shadow_visibility = 0.0;
+        } else {
+            for (var candidate_slot = 0u; candidate_slot < 8u; candidate_slot = candidate_slot + 1u) {
+                let shadow_sample = sample_shadow_data_2d(
+                    layer,
+                    shadow_res,
+                    shadow_res_i,
+                    angular_x,
+                    candidate_slot
+                );
+                shadow_visibility = shadow_visibility * shadow_visibility_from_sample(
+                        shadow_sample,
+                        angle,
+                        dist_ratio,
+                        contact_offset,
+                        world_pos.xy,
+                        l.position.xy,
+                        l.light_radius
+                    );
+            }
         }
         let visibility = select(1.0, shadow_visibility, receives_shadow);
         max_shadow_occlusion = max(max_shadow_occlusion, 1.0 - visibility);
